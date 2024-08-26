@@ -168,9 +168,6 @@ struct minstrel_sta_info {
     /* sampling table */
     u8 *sample_table;
 
-#ifdef CONFIG_MAC80211_DEBUGFS
-    struct dentry *dbg_stats;
-#endif
 };
 
 struct minstrel_priv {

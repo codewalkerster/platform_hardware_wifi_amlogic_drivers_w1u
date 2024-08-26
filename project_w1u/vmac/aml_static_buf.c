@@ -27,7 +27,9 @@
 #include <linux/skbuff.h>
 #include <linux/version.h>
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
+#ifndef UBUNTU_PT_MODE
 #include <linux/wlan_plat.h>
+#endif
 #else
 #include <linux/amlogic/wlan_plat.h>
 #endif

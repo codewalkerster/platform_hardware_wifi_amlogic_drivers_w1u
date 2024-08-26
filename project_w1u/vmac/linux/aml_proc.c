@@ -7,7 +7,8 @@
 #include "wifi_mac_scan.h"
 #include "wifi_mac_chan.h"
 #include "wifi_mac_concurrent.h"
-
+#include "wifi_iwpriv_cmd.h"
+#include "wifi_hal_cmd.h"
 
 static struct proc_dir_entry *g_proc;
 #define AML_PARENT_NAME "wlan"
@@ -290,13 +291,12 @@ static ssize_t driverRead(struct file *filp, char __user *buf, size_t count,
     unsigned char *out, *out_dfs;
     struct wifi_mac *wifimac;
     unsigned int i;
-    unsigned char channel, pre_channel, bw, pre_bw;
+    unsigned char channel, pre_channel, bw ,max_bw = 0;
     unsigned char tmp_buf[LEN_DRV_BUFF] = {0}, dfs_channel[LEN_DRV_DFSINFO_BUFF] = {0};
 
     wnet_vif = g_wnet_vif0;
     wifimac = wifi_mac_get_mac_handle();
     pre_channel = 0;
-    pre_bw = 0;
 
     if (*f_pos > 0)
         return 0;
@@ -312,11 +312,20 @@ static ssize_t driverRead(struct file *filp, char __user *buf, size_t count,
         }
         channel = wifimac->wm_channels[i].chan_pri_num;
         bw = (wifimac->wm_channels[i].chan_bw == 0) ? 20 : (wifimac->wm_channels[i].chan_bw == 1) ? 40 : 80;
+        if (hal_get_channel_2g_20Mhz_only() && (channel >= 1) && (channel <= 14)) {
+            bw = 20;
+        }
         if (g_DFS_on || !(wifimac->wm_channels[i].chan_flags & WIFINET_CHAN_DFS)) {
-            if (channel != pre_channel)
+            if (channel != pre_channel) {
                 out += sprintf(out, "CH-%d:\tBW_%dMHz\t(flag=0x%x)\n", channel, bw, wifimac->wm_channels[i].chan_flags);
-            if (channel == pre_channel && bw > pre_bw)
-                sprintf(out - DRV_PRINT_OFFT, "BW_%dMHz\t(flag=0x%x)\n", bw, wifimac->wm_channels[i].chan_flags);
+                max_bw = bw;
+            }
+            else {
+                if (bw > max_bw) {
+                    max_bw = bw;
+                    sprintf(out - DRV_PRINT_OFFT, "BW_%dMHz\t(flag=0x%x)\n", bw, wifimac->wm_channels[i].chan_flags);
+                }
+            }
             if ((wifimac->wm_channels[i].chan_flags & WIFINET_CHAN_DFS) && channel != pre_channel) {
                 if (strlen(dfs_channel) == 0) {
                     out_dfs += sprintf(out_dfs, "DFS channel:%d", channel);
@@ -331,7 +340,6 @@ static ssize_t driverRead(struct file *filp, char __user *buf, size_t count,
             }
         }
         pre_channel = channel;
-        pre_bw = bw;
     }
     if ((LEN_DRV_DFSINFO_BUFF - strlen(tmp_buf)) >= LEN_DRV_BYPASSDFS + strlen(dfs_channel)) {
         out += sprintf(out, "bypassdfs:%d\n", g_DFS_on);
@@ -593,15 +601,12 @@ void get_rate_name(unsigned char rate, unsigned char *name) {
     out += sprintf(out, "\0");
 }
 
-extern void get_phy_stc_info(unsigned int *arr);
 static ssize_t rvrinfoRead(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
     unsigned int len = 0;
     struct wlan_net_vif *wnet_vif = g_wnet_vif0;
-    struct drv_private *drv_priv = drv_get_drv_priv();
     unsigned char *out;
-    unsigned int arr[8] = {0};
-    unsigned char bw, rate_name[10];
+
 
     memset(g_aucprocbuf, 0, MAX_BUF_LENGTH);
     out = g_aucprocbuf;
@@ -609,20 +614,11 @@ static ssize_t rvrinfoRead(struct file *filp, char __user *buf, size_t count, lo
     if (*f_pos > 0)
         return 0;
 
-    if (wnet_vif->vm_state == WIFINET_S_CONNECTED) {
-        get_phy_stc_info(arr);
-        bw = wnet_vif->vm_wmac->wm_curchan->chan_bw;
-
-        out += sprintf(out, "avg_rssi:%d\navg_bcn_rssi:%d\navg_snr:%d\n", wnet_vif->vm_mainsta->sta_avg_rssi - 256, wnet_vif->vm_mainsta->sta_avg_bcn_rssi, arr[1]);
-        out += sprintf(out, "snr_qdb:%d\nnoise_f:%d\n", arr[5], arr[4]);
-        get_rate_name(wnet_vif->vm_mainsta->sta_vendor_rate_code, &rate_name);
-        out += sprintf(out, "txRate:%s\n", rate_name);
-        get_rate_name(drv_priv->drv_currratetable->info[wnet_vif->vm_mainsta->sta_rxrate_index].vendor_rate_code, &rate_name);
-        out += sprintf(out, "rxRate:%s\n", rate_name);
-        out += sprintf(out, "BW:%dMHz\n", (bw == 0) ? 20 : (bw == 1) ? 40 : 80);
+    if (aml_get_rvr_info(wnet_vif, out, WRITE_FILE_NODE) < 0) {
+        return -EFAULT;
     }
-    len = strlen(g_aucprocbuf);
 
+    len = strlen(out);
     ASSERT(len <= MAX_BUF_LENGTH);
 
     if (copy_to_user(buf, g_aucprocbuf, len)) {

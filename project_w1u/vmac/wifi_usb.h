@@ -1,4 +1,4 @@
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
 #ifndef __WIFI_USB__
 #define __WIFI_USB__
 

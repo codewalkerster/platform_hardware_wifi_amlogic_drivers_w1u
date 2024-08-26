@@ -7,6 +7,27 @@
 #define ALIGN_POINT(x,a) ((unsigned char *)(((unsigned long)(x)+(a)-1)&~((a)-1)))
 #endif
 
+//fw log mode, later, can be merged with fw
+#define UART_MODE                  0
+#define WRITE_SRAM_MODE            1
+#define HOST_PRINTING              3
+#define OPEN_AUTO_PRINT            4
+#define CLOSE_AUTO_PRINT           5
+#define FWLOG_AON_PIN_MUX_DISABLE  6
+#define FWLOG_AON_PIN_MUX_ENABLE   7
+
+typedef struct TXTParameter
+{
+    unsigned char tx_power_change_disable;
+    unsigned char wftx_pwrtbl_en;
+    unsigned char initial_gain_change_disable;
+    unsigned char ant_sel_en;
+    unsigned char ant_gpio_cfg;
+    unsigned char wifi_fwlog_by_file;
+    unsigned char channel_2g_20Mhz_only;
+} TXTParameter;
+extern TXTParameter aml_txt_parameter;
+
 unsigned int phy_init_hmac(unsigned char wnet_vif_id);
 unsigned int phy_disable_net_traffic(void);
 unsigned int phy_set_param_cmd(unsigned char cmd,unsigned char vid,unsigned int data);
@@ -94,6 +115,7 @@ void phy_set_tx_power_percentage(char percentage, unsigned short channel_num, un
 int aml_send_me_shutdown(void);
 void phy_set_cf_end(unsigned char vid, unsigned char is_enable);
 unsigned char hal_ant_sel_en_get(void);
+unsigned char hal_get_channel_2g_20Mhz_only(void);
 void phy_get_queue_debug_info(unsigned char vid);
 
 #endif  //__AML_PHY_H__

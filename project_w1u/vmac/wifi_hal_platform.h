@@ -53,12 +53,12 @@ extern unsigned char aml_bus_type;
 unsigned char hal_set_sys_clk(int clockdiv);
 unsigned char hal_set_sys_clk_Core(unsigned int addr, unsigned int value);
 int hal_download_sdio_fw_img(void);
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
 int hal_download_usb_fw_img(void);
 #endif
 unsigned int bbpll_init(void);
 unsigned int bbpll_start (void);
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
 void aml_usb_ctlread_complete(struct urb *urb);
 #endif
 void aml_disable_wifi(void);

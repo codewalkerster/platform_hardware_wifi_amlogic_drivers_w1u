@@ -270,9 +270,18 @@ static void wifi_mac_amsdu_tasklet(unsigned long arg)
 
 static void wifi_mac_amsdu_tasklet_ex(unsigned long arg)
 {
-    WIFINET_AMSDU_TASKLET_LOCK((struct wifi_mac *)(SYS_TYPE)arg);
+    struct wifi_mac *wifimac = (struct wifi_mac *)(SYS_TYPE)arg;
+
+    if (wifimac->txlist_flush_process == 1) {
+        return;
+    }
+    WIFINET_TXLIST_FLUASH_LOCK(wifimac);
+    WIFINET_AMSDU_TASKLET_LOCK(wifimac);
+
     wifi_mac_amsdu_tasklet(arg);
-    WIFINET_AMSDU_TASKLET_UNLOCK((struct wifi_mac *)(SYS_TYPE)arg);
+
+    WIFINET_AMSDU_TASKLET_UNLOCK(wifimac);
+    WIFINET_TXLIST_FLUASH_UNLOCK(wifimac);
 }
 
 int wifi_mac_txamsdu_task(void *arg)

@@ -1,6 +1,12 @@
 #include "wifi_drv_capture.h"
 #include<asm/div64.h>
 
+#ifdef UBUNTU_PT_MODE
+#include <asm/uaccess.h>
+#include <linux/uaccess.h>
+#include <linux/unistd.h>
+#endif
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
 MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
 #endif
@@ -255,7 +261,7 @@ int dut_start_capture(unsigned int value)
     hif->hif_ops.hi_write_word(TBC_OFFSET_118, trigger_delay_time);//config testbus trigger delay time
     hif->hif_ops.hi_write_word(TBC_RAM_SHARE, TBC_RAM_SHARE_MASK); //ram share enable
 
-    dut_set_reg_frag(TBC_OFFSET_114, 4, 0, 0x1c);// config tbc_test_bus_width, by default : 0x1c
+    dut_set_reg_frag(TBC_OFFSET_114, 4, 0, 0x1f);// config tbc_test_bus_width, by default : 0x1c
     dut_set_reg_frag(TBC_OFFSET_114, 9, 9, test_mode & 0x1);// Set test_mode
     dut_set_reg_frag(TBC_OFFSET_114, 10, 10, 0 & 0x01);//
     dut_set_reg_frag(TBC_OFFSET_114 , 8, 8, 0);// 0->1 , lock date to hw
@@ -434,14 +440,23 @@ int  dut_stop_tbus_to_get_sram(struct file *filep, int stop_ctrl, int save_file)
             str_2_ascii_32bits((char*)pdata, wt_file);
             for (j = 0 ; j < 8; j++) {
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
+#ifdef UBUNTU_PT_MODE
+                kernel_write(filep, &wt_file[j], sizeof(unsigned char), &file_pos);
+#else
                 vfs_write(filep, &wt_file[j], sizeof(unsigned char), &file_pos);
+#endif
+
 #elif defined (LINUX_PLATFORM)
                 kernel_write(filep, &wt_file[j], sizeof(unsigned char), &file_pos);
 #endif
             }
             pdata++;
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
+#ifdef UBUNTU_PT_MODE
+            kernel_write(filep, (char*)&enter, sizeof(unsigned char), &file_pos);
+#else
             vfs_write(filep, (char*)&enter, sizeof(unsigned char), &file_pos);
+#endif
 #elif defined (LINUX_PLATFORM)
             kernel_write(filep, (char*)&enter, sizeof(unsigned char), &file_pos);
 #endif

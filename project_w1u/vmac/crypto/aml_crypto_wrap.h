@@ -3,7 +3,31 @@
 
 #include <linux/types.h>
 #include <linux/kernel.h>
+
+#ifdef UBUNTU_PT_MODE
+#include <linux/slab.h>
+#include <linux/version.h>
+#include <linux/kmod.h>
+#include <linux/module.h>
+#include <linux/skbuff.h>
+#include <linux/netdevice.h>
+#include <linux/if_arp.h>
+#include <net/ieee80211_radiotap.h>
+#include <linux/wireless.h>
+#include <linux/etherdevice.h>
+#include <linux/random.h>
+#include <linux/if_vlan.h>
+#include <linux/time.h>
+#include <net/iw_handler.h>
+#include <linux/init.h>
+#include <linux/sysctl.h>
+#include <linux/netdevice.h>
+#include <linux/if_arp.h>
+#include <asm/uaccess.h>
+#include "wifi_debug.h"
+#else
 #include "wifi_mac_com.h"
+#endif
 
 #define TEST_FAIL() 0
 
@@ -112,6 +136,8 @@ void wpa_hexdump_key(int level, const char *title, const void *buf, size_t len);
 void forced_memzero(void *ptr, size_t len);
 void bin_clear_free(void *bin, size_t len);
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
+#ifndef UBUNTU_PT_MODE
 u32 crc32(const u8 *frame, size_t frame_len);
+#endif
 #endif
 #endif//_AML_CRYTO_WRAP_H_

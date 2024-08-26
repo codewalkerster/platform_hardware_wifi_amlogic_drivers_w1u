@@ -22,6 +22,12 @@ static char *ips_wakeup_reason[WAKEUP_REASON_MAX];
 
 char *ips_state[WIFINET_PWRSAVE_STATE_MAX];
 
+unsigned char *suspend_mode_trace[3] = {
+    "NONE",
+    "WOW",
+    "DEEPSLEEP"
+};
+
 //sleep timer handler, to check if need to enter sleep
 static void wifi_mac_pwrsave_presleep(struct work_struct *work)
 {
@@ -1730,7 +1736,7 @@ int wifi_mac_pwrsave_wow_suspend(SYS_TYPE param1,
     int listen_interval = 0, connect = 0;
     unsigned int filter = 0, cnt = 0;
 
-    AML_PRINT_LOG_INFO("\n");
+    AML_PRINT_LOG_INFO("suspend_mode:%s, wow:0x%x\n", suspend_mode_trace[wifimac->wm_suspend_mode], wow);
     WIFINET_PWRSAVE_MUTEX_LOCK(wnet_vif);
     if (wifimac->wm_suspend_mode == WIFI_SUSPEND_STATE_WOW)
     {
@@ -1789,7 +1795,7 @@ int wifi_mac_pwrsave_wow_suspend(SYS_TYPE param1,
             wifi_mac_pwrsave_wow_usr(wnet_vif_tmp, wow, &filter);
         else
             wifi_mac_pwrsave_wow_sta(wnet_vif_tmp);
-
+        wifimac->wow_wakeup_reason = 0;
         /*set arp agent */
         wifi_mac_set_arp_agent(wnet_vif_tmp, ENABLE);
 
@@ -1798,7 +1804,7 @@ int wifi_mac_pwrsave_wow_suspend(SYS_TYPE param1,
             listen_interval = wnet_vif_tmp->vm_bcn_intval * wnet_vif_tmp->vm_dtim_period;
         else
             listen_interval = wnet_vif_tmp->vm_bcn_intval;
-        wifimac->drv_priv->drv_ops.Phy_beaconinit(wifimac->drv_priv,wnet_vif_tmp->wnet_vif_id, listen_interval);
+        wifimac->drv_priv->drv_ops.Phy_beaconinit(wifimac->drv_priv,wnet_vif_tmp->wnet_vif_id, (1<<16) | listen_interval);
 
         /* change beacon miss timer period */
         wifi_mac_set_beacon_miss_ex(wnet_vif_tmp, ENABLE, WIFINET_BCNMISS_TIME/* period, ms*/);
@@ -1820,6 +1826,16 @@ int wifi_mac_pwrsave_wow_suspend(SYS_TYPE param1,
             WIFINET_PWRSAVE_MUTEX_UNLOCK(wnet_vif);
             return 0;
         }
+
+        /* pno offload start only wlan0 support */
+#ifdef PNO_SUPPORT
+        aml_send_sched_scan_req(wnet_vif, NULL);
+        if (wow && wow->nd_config) {
+         aml_send_sched_scan_req(wnet_vif, wow->nd_config);
+         //aml_send_sched_scan_req(wnet_vif, NULL);
+
+        }
+#endif
         wifimac->drv_priv->drv_ops.drv_set_suspend(wifimac->drv_priv, wnet_vif->wnet_vif_id, ENABLE,
             WIFI_SUSPEND_STATE_WOW, filter);
         WIFINET_PWRSAVE_LOCK(wnet_vif);
@@ -1845,25 +1861,25 @@ void wifi_mac_pwrsave_wow_resume(SYS_TYPE param1,
     int connect = 0;
     int ret = 0;
 
-    AML_PRINT_LOG_INFO("\n");
+    AML_PRINT_LOG_INFO("suspend_mode:%s\n", suspend_mode_trace[wifimac->wm_suspend_mode]);
     WIFINET_PWRSAVE_MUTEX_LOCK(wnet_vif);
 
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
     if (aml_bus_type)
     {
-        printk("------usb state: 0x%x\n", g_udev->state);
+        AML_PRINT_LOG_INFO("------usb state:0x%x\n", g_udev->state);
         while (g_udev->state != USB_STATE_CONFIGURED)
         {
             udelay(100);
         }
-        printk("--------usb configured-------\n");
+        AML_PRINT_LOG_INFO("--------usb configured-------\n");
         usb_submit_urb(g_urb, GFP_ATOMIC);
     }
 #endif
     if (wifimac->wm_suspend_mode == WIFI_SUSPEND_STATE_NONE)
     {
         WIFINET_PWRSAVE_MUTEX_UNLOCK(wnet_vif);
-        return ;
+        return;
     }
 
     list_for_each_entry_safe(wnet_vif_tmp, wnet_vif_next, &wifimac->wm_wnet_vifs, vm_next)
@@ -1894,7 +1910,7 @@ void wifi_mac_pwrsave_wow_resume(SYS_TYPE param1,
         if (ret == 0)
             wnet_vif_tmp->vm_pwrsave.ips_state = WIFINET_PWRSAVE_AWAKE;
         else
-            AML_PRINT_LOG_ERR("ret -1 \n");
+            AML_PRINT_LOG_ERR("ips_state:%d, ret:%d\n", wnet_vif_tmp->vm_pwrsave.ips_state, ret);
         WIFINET_PWRSAVE_UNLOCK(wnet_vif);
     }
 
@@ -1908,6 +1924,11 @@ void wifi_mac_pwrsave_wow_resume(SYS_TYPE param1,
             netif_wake_queue(wnet_vif->vm_ndev);
             return ;
         }
+        /* stop PNO only wlan0 support*/
+#ifdef PNO_SUPPORT
+        if (wifimac->sched_scan)
+            aml_send_sched_scan_stop(wnet_vif, 0);
+#endif
         wifimac->drv_priv->drv_ops.drv_set_suspend(wifimac->drv_priv, wnet_vif->wnet_vif_id, DISABLE,
             WIFI_SUSPEND_STATE_NONE, 0);
 

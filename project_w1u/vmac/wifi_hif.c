@@ -792,6 +792,7 @@ unsigned char hi_get_cmd(unsigned char *pdata,unsigned int len)
     struct hw_interface* hif = hif_get_hw_interface();
     FIFO_SHARE_CTRL *pCmdDownFifo = &hif->CmdDownFifo;
     unsigned int Cmd = pdata[0] ;
+    unsigned int loop = 0;
 
     if (!hi_set_cmd(pdata,len))
     {
@@ -802,6 +803,12 @@ unsigned char hi_get_cmd(unsigned char *pdata,unsigned int len)
     //get return data
     while (!hi_push_down_fifo_up(pCmdDownFifo,pdata,len))
     {
+        if (loop++ > 50000) {
+            if (aml_request_recovery(WIFINET_RECOVERY_SRC_CMD_CRASH) == 0) {
+                AML_PRINT_LOG_INFO("request recovery due to cmd no response\n");
+            }
+            return false;
+        }
 #ifdef HAL_SIM_VER
         if (aml_bus_type) {
             OS_UDELAY(80000);
@@ -860,6 +867,7 @@ void hi_soft_tx_irq(void)
 #if defined (HAL_FPGA_VER)
     AML_PRINT(AML_LOG_ID_XMIT,AML_LOG_LEVEL_DEBUG, "txPageFreeNum:%d, HalTxPageDoneCounter:%d\n", hal_priv->txPageFreeNum, hal_priv->HalTxPageDoneCounter);
 #endif
+
 
     while (hal_priv->txcompletestatus->txdoneframecounter !=  hal_priv->HalTxFrameDoneCounter)
     {
@@ -1252,7 +1260,7 @@ void hi_soft_rx_irq(struct hal_private *hal_priv, unsigned int rx_fw_ptr)
         memset(rx_buffer, 0, frame_offset);
 }
 #endif
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
 extern struct urb *g_urb;
 extern unsigned char *g_buffer;
 void hi_supplement_usb_buffer(void)
@@ -1294,7 +1302,7 @@ void hi_irq_task(struct hal_private *hal_priv)
     if (hal_priv->ps_host_state == 3)
     {
         if(aml_bus_type) {
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
             atomic_set(&hal_priv->usb_isr_done, 0);
             usb_submit_urb(g_urb, GFP_ATOMIC);
 #endif
@@ -1305,7 +1313,7 @@ void hi_irq_task(struct hal_private *hal_priv)
     if (atomic_read(&hal_priv->drv_suspend_cnt) != 0)
     {
         if(aml_bus_type) {
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
             atomic_set(&hal_priv->usb_isr_done, 0);
             usb_submit_urb(g_urb, GFP_ATOMIC);
 #endif
@@ -1315,7 +1323,7 @@ void hi_irq_task(struct hal_private *hal_priv)
 
 //int_loop:
     if(aml_bus_type) {
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
         intr_status = hal_priv->int_status_copy;
         memset(g_buffer, 0, 2*sizeof(int));
 #endif
@@ -1461,7 +1469,8 @@ void hi_irq_task(struct hal_private *hal_priv)
 
     if (intr_status & TX_ERROR_IRQ)
     {
-         hal_priv->sts_hirq[hirq_tx_err_idx]++;
+        hal_priv->sts_hirq[hirq_tx_err_idx]++;
+        aml_request_recovery(WIFINET_RECOVERY_SRC_SDIO_TIMEOUT);
         PRINT("--->TX_ERROR_IRQ\n");
         ASSERT(0);
     }
@@ -1477,7 +1486,7 @@ void hi_irq_task(struct hal_private *hal_priv)
     {
 
         if (aml_bus_type) {
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
             atomic_set(&hal_priv->usb_isr_done, 0);
             usb_submit_urb(g_urb, GFP_ATOMIC);
 #endif
@@ -1931,7 +1940,7 @@ void hif_get_sts(unsigned int op_code, unsigned int ctrl_code)
             AML_PRINT_LOG_INFO("rx_fifo: head %ld, tail %ld, total %ld\n",
                 hif->rx_fifo.FDH, hif->rx_fifo.FDT, hif->rx_fifo.FDN);
             if(aml_bus_type) {
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
                 AML_PRINT_LOG_INFO("rx by word: free %d, fw_to_do %d, sdio_to_mv %d, buf_rd_ptr 0x%x, mac_wt_ptr 0x%x, fw_rd_ptr 0x%x, sdio_rd_ptr 0x%x \n",
                 CIRCLE_Subtract2(sdio_rd, mac_wt, USB_DEFAULT_RXPAGENUM*PAGE_LEN/4),
                 CIRCLE_Subtract2(mac_wt, fw_rd, USB_DEFAULT_RXPAGENUM*PAGE_LEN/4),

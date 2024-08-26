@@ -16,6 +16,20 @@
     #define DRV_TXDESC_NUM 1280
 #endif
 
+typedef struct tx_info_record
+{
+    unsigned char vid;
+    unsigned char tid;
+    unsigned short seq;
+    unsigned short fc;
+    unsigned int tx_id;
+    unsigned char queue_id;
+    unsigned int packetlen;
+    unsigned char using;
+    unsigned long long timestamp;
+}tx_info_record_st;
+extern tx_info_record_st tx_info_record[WIFI_MAX_TXFRAME];
+
 enum tx_frame_flag
 {
     TX_OTHER_FRAME = 0,
@@ -147,5 +161,8 @@ extern void wifi_mac_recycle_txdesc(struct sk_buff *skbbuf);
 extern struct sk_buff *wifi_mac_alloc_skb(struct wifi_mac *wifimac, unsigned int size);
 extern void wifi_mac_free_skb(struct sk_buff *skb);
 extern void wifi_mac_free_skb_task(SYS_TYPE param1, SYS_TYPE param2, SYS_TYPE param3, SYS_TYPE param4, SYS_TYPE param5);
+extern void tx_record_show();
+extern void tx_done_record(struct fw_txdesc_fifo *pTxDescFiFo, unsigned char queue_id);
+extern void tx_free_record(struct Tx_FrameDesc *pTxFrameDesc,unsigned char tx_id);
 
 #endif//_WIFI_PKT_DESC_H_
