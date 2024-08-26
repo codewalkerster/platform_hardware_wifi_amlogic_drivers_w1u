@@ -37,7 +37,7 @@ struct wifi_station;
 #define HAL_RATECTRL_TX_SEND_SUCCESS 0X800
 #define HAL_RATECTRL_USE_SAMPLE_RATE 0X1000
 
-#define HAL_BEACON_PERIOD 0x0000ffff  /* beacon interval period */
+#define HAL_BEACON_PERIOD 0x0001ffff  /* beacon interval period */
 #define WLAN_CTRL_FRAME_SIZE 14   /* ACK+FCS */
 #define CO_WORK_GET 0
 #define CO_WORK_FREE 1
@@ -156,7 +156,7 @@ struct tx_power_plan {
 /*
  * Calculate the transmit duration of a frame.
  */
-unsigned short 
+unsigned short
 drv_hal_calc_txtime(const struct drv_rate_table *rates,
     unsigned int frameLen,unsigned short rateix, int shortPreamble);
 
@@ -198,7 +198,7 @@ static inline int drv_hal_keyclear(unsigned char wnet_vif_id, int staid)
 //Reset_Key_Cmd
 static inline int drv_hal_keyreset( unsigned char wnet_vif_id,unsigned short _ix)
 {
-    
+
     struct hal_private* hal_priv = hal_get_priv();
 
     AML_PRINT(AML_LOG_ID_KEY, AML_LOG_LEVEL_DEBUG,"<running> \n");
@@ -210,7 +210,7 @@ static inline int drv_hal_keyreset( unsigned char wnet_vif_id,unsigned short _ix
 }
 
 //UniCast_Key_Set_Cmd   Multicast_Key_Set_Cmd
-static inline int 
+static inline int
 drv_hal_keyset(unsigned char wnet_vif_id, unsigned short _ix,
     struct hal_key_val *_pk, unsigned char *_mac, unsigned short staaid)
 {
@@ -232,20 +232,20 @@ drv_hal_keyset(unsigned char wnet_vif_id, unsigned short _ix,
     if ((_mac[0]&0x01) == 0x01)                //mutil cast
     {
         hal_priv->hal_ops.phy_set_mcast_key(wnet_vif_id,(unsigned char*)_pk->kv_val,
-                (unsigned char)_pk->kv_len, (unsigned int)_ix, 
+                (unsigned char)_pk->kv_len, (unsigned int)_ix,
                 (unsigned char)_pk->kv_type, 1);
     }
     else                                     //ucast
     {
-        hal_priv->hal_ops.phy_set_ucast_key(wnet_vif_id,staaid & 0xff, _mac, 
+        hal_priv->hal_ops.phy_set_ucast_key(wnet_vif_id,staaid & 0xff, _mac,
                 _pk->kv_val,32, _pk->kv_type,_ix);
 
     }
     return 1;
 }
 
-static inline int 
-drv_hal_rekey_data_set(unsigned char wnet_vif_id, 
+static inline int
+drv_hal_rekey_data_set(unsigned char wnet_vif_id,
     void *rekey_data, unsigned short staaid)
 {
     struct hal_private* hal_priv = hal_get_priv();
@@ -253,7 +253,7 @@ drv_hal_rekey_data_set(unsigned char wnet_vif_id,
     return 1;
 }
 
-// Chip_Reset_Cmd 
+// Chip_Reset_Cmd
 static inline int drv_hal_reset(void)
 {
 
@@ -285,7 +285,7 @@ static inline void drv_hal_scancmd(unsigned int start)
 }
 
 //BCNInterval_Cmd
-static inline int 
+static inline int
 drv_hal_beaconinit(unsigned char wnet_vif_id,unsigned int _bperiod)
 {
    struct hal_private* hal_priv = hal_get_priv();
@@ -348,7 +348,7 @@ static inline int drv_hal_get11nextbusy(void)
 }
 
 
-static inline int drv_hal_set11nmac2040( enum wifi_mac_chanbw  chan_bw)  
+static inline int drv_hal_set11nmac2040( enum wifi_mac_chanbw  chan_bw)
 {
      struct hal_private* hal_priv = hal_get_priv();
 
@@ -366,7 +366,7 @@ static inline void drv_hal_set_bmfm_info(int wnet_vif_id, unsigned char * group_
     hal_priv->hal_ops.phy_set_bmfm_info(wnet_vif_id, group_id, user_position, feedback_type);
 }
 
-static inline void 
+static inline void
 drv_hal_put_bcn_buf(unsigned char wnet_vif_id,unsigned char *pBeacon,
     unsigned short len,unsigned char Rate,unsigned short Flag)
 {
@@ -376,8 +376,8 @@ drv_hal_put_bcn_buf(unsigned char wnet_vif_id,unsigned char *pBeacon,
 }
 
 
-static inline void 
-drv_hal_set_bcn_start(unsigned char wnet_vif_id,unsigned short intval, 
+static inline void
+drv_hal_set_bcn_start(unsigned char wnet_vif_id,unsigned short intval,
     unsigned char dtim_count,unsigned short  bsstype)
 {
     struct hal_private* hal_priv = hal_get_priv();
@@ -415,7 +415,7 @@ static inline unsigned int drv_low_call_register_task(SYS_TYPE taskid,SYS_TYPE p
     return hal_priv->hal_ops.hal_call_task(taskid,param1);
 }
 
-static inline unsigned int 
+static inline unsigned int
 hal_phy_addba_ok(unsigned char wnet_vif_id,unsigned short StaAid,
     unsigned char TID,unsigned short SeqNumStart,unsigned char BA_Size,
     unsigned char AuthRole,unsigned char BA_TYPE)
@@ -426,7 +426,7 @@ hal_phy_addba_ok(unsigned char wnet_vif_id,unsigned short StaAid,
     return 0;
 }
 
-static inline unsigned int 
+static inline unsigned int
 hal_phy_delt_ba_ok(unsigned char wnet_vif_id,unsigned short StaAid,
     unsigned char TID,unsigned char AuthRole)
 {
@@ -436,7 +436,7 @@ hal_phy_delt_ba_ok(unsigned char wnet_vif_id,unsigned short StaAid,
 }
 
 
-static inline unsigned int 
+static inline unsigned int
 hal_phy_register_sta_id(unsigned char wnet_vif_id,unsigned short StaAid,
     unsigned char *pMac, unsigned char encrypt)
 {
@@ -445,7 +445,7 @@ hal_phy_register_sta_id(unsigned char wnet_vif_id,unsigned short StaAid,
     return 0;
 }
 
-static inline unsigned int 
+static inline unsigned int
 hal_phy_unregister_sta_id(unsigned char wnet_vif_id,unsigned short StaAid)
 {
     struct hal_private* hal_priv = hal_get_priv();
@@ -462,7 +462,7 @@ static inline unsigned int hal_phy_unregister_all_sta_id(unsigned char wnet_vif_
 
 
 
-static inline unsigned int 
+static inline unsigned int
 drv_hal_settxqueueprops(unsigned char wnet_vif_id,int ac,unsigned char aifsn,
     unsigned char cwminmax,unsigned short txop)
 {
@@ -515,7 +515,7 @@ unsigned char drv_hal_wnet_vif_staid(unsigned char vm_opmode,unsigned short sta_
 unsigned short drv_hal_staid(enum hal_op_mode hal_opmode,unsigned short sta_associd);
 unsigned char drv_hal_nsta_staid(struct wifi_station *sta);
 struct drv_rate_table *drv_hal_get_rate_tbl(int mode);
-int drv_hal_workitem_inital(void);
+int drv_hal_workitem_initial(void);
 void drv_hal_workitem_free(void);
 int drv_hal_add_workitem(WorkHandler task, WorkHandler taskcallback, SYS_TYPE param1,
     SYS_TYPE param2, SYS_TYPE param3, SYS_TYPE param4, SYS_TYPE param5);

@@ -134,7 +134,7 @@ unsigned char hal_chk_replay_cnt(struct hal_private *hal_priv,HW_RxDescripter_bi
 
         if (ret < 0)
         {
-            //dump_memory_internel(&RxPrivHdr->data[10],6);
+            //dump_memory_internal(&RxPrivHdr->data[10],6);
             //PRINT("staid  %x error !\n", staid);
             //if we are sta, we should disconnect from the counterpart.
             return false;
@@ -223,7 +223,7 @@ void hal_soft_rx_cs(struct hal_private *hal_priv, struct sk_buff *skb)
     if (wnet_vif_id >= WIFI_MAX_VID)
     {
         AML_PRINT(AML_LOG_ID_RECV, AML_LOG_LEVEL_DEBUG, "hal_soft_rx_cs wnet_vif_id %d \n", wnet_vif_id);
-        //dump_memory_internel(RxPrivHdr_bit->data, 32);
+        //dump_memory_internal(RxPrivHdr_bit->data, 32);
         os_skb_free(skb);
         return;
     }
@@ -297,7 +297,7 @@ void hal_soft_rx_cs(struct hal_private *hal_priv, struct sk_buff *skb)
 
                 if (RxPrivHdr_bit->mic_err) {
                         PRINT("%s RxLength= 0x%x, mic_err, dump\n",__FUNCTION__,RxPrivHdr_bit->RxLength);
-                        dump_memory_internel(RxPrivHdr_bit->data, RxPrivHdr_bit->RxLength);
+                        dump_memory_internal(RxPrivHdr_bit->data, RxPrivHdr_bit->RxLength);
                 }
                 OS_SKBBUF_FREE(skb);
                 return;
@@ -360,7 +360,7 @@ void hal_soft_rx_cs(struct hal_private *hal_priv, struct sk_buff *skb)
         }
 #endif
         if (RxPrivHdr_bit->data[1]&IEEE80211_FC1_WEP) {
-            //dump_memory_internel(RxPrivHdr_bit->data, RxPrivHdr_bit->RxLength);
+            //dump_memory_internal(RxPrivHdr_bit->data, RxPrivHdr_bit->RxLength);
             RxPrivHdr_bit->data[1] &= ~IEEE80211_FC1_WEP;
         }
         if (RxPrivHdr_bit->RxDecryptType != RX_PHY_NOWEP) {
@@ -1133,6 +1133,8 @@ int hal_free_tx_id(struct hal_private * hal_priv, struct txdonestatus *txstatus,
         *callback = pTxFrameDesc->callback;
         *queue_id = pTxFrameDesc->txqueueid;
 
+        tx_free_record(pTxFrameDesc, id);
+
         if (hal_priv->bhaltxdrop) {
             if (hal_is_empty_tx_id(hal_priv) == 0) {
                 PRINT("id:%d, set bhaltxdrop = 0!\n", id);
@@ -1173,6 +1175,7 @@ static int hal_alloc_tx_id(struct hal_private * hal_priv,struct fw_txdesc_fifo *
     hal_priv->tx_frames[id].skb = NULL;
     hal_priv->tx_frames[id].valid = 1;
     hif->HiStatus.TX_REQ_EVENT_num[pTxDescFiFo->txqueueid]++;
+    pTxDescFiFo->pTxDPape->TxPriv.reserve |= WIFI_TXFRAME_TXID_VALID;
 
 __alloc_fail:
     COMMON_UNLOCK();
@@ -1477,6 +1480,8 @@ void  hal_tx_frame(void)
                     offset += len;
 #endif
                     __sync_fetch_and_add(&hif->HiStatus.Tx_Done_num, 1);
+                    tx_done_record(pTxDescFiFo,txqueueid);
+
                     EltPtr = CO_SharedFifoPick(pTxShareFifo, CO_TX_BUFFER_SET);
                     pTxDescFiFo = (struct fw_txdesc_fifo *)EltPtr ;
                     pTxDPape = pTxDescFiFo->pTxDPape;
@@ -1782,14 +1787,15 @@ int hal_get_agg_pend_cnt(void)
     unsigned char remain_count = 0;
     unsigned char i = 0;
     unsigned long callback;
+    struct Tx_FrameDesc *pTxFrameDesc = NULL;
 
     memset(&txstatus, 0, sizeof(struct txdonestatus));
     hal_priv->bhaltxdrop = 0;
 
     COMMON_LOCK();
     if (hal_is_empty_tx_id(hal_priv) < 0) {
-        AML_PRINT_LOG_INFO("set bhaltxdrop to 1, tx_frames_map:%lx, %lx, page:%d\n",
-            hal_priv->tx_frames_map[0], hal_priv->tx_frames_map[1], hal_priv->txPageFreeNum);
+        AML_PRINT_LOG_INFO("set bhaltxdrop to 1, vid:%d, free_page_num:%d, tx_frames_map:%lx, %lx\n",
+            vid, hal_priv->txPageFreeNum, hal_priv->tx_frames_map[0], hal_priv->tx_frames_map[1]);
         hal_priv->bhaltxdrop = 1;
     }
     COMMON_UNLOCK();
@@ -1798,45 +1804,65 @@ int hal_get_agg_pend_cnt(void)
     for (queueid = 0; queueid < HAL_NUM_TX_QUEUES; queueid++) {
         pTxShareFifo = &hal_priv->txds_trista_fifo[queueid];
         while (CO_SharedFifoEmpty(pTxShareFifo, CO_TX_BUFFER_MAKE)) {
-            STATUS = CO_SharedFifoGet(pTxShareFifo, CO_TX_BUFFER_MAKE, 1, &EltPtr);
+            EltPtr = CO_SharedFifoPick(pTxShareFifo, CO_TX_BUFFER_MAKE);
             pTxDescFiFo = (struct fw_txdesc_fifo *)EltPtr;
 
-            if (!((pTxDescFiFo->pTxDPape->TxPriv.vid == vid) || (vid == 3))) {
+            if (!((pTxDescFiFo->pTxDPape->TxPriv.vid == vid) || (vid == 3)) ||
+                ((pTxDescFiFo->pTxDPape->TxPriv.vid == vid) &&
+                ((pTxDescFiFo->pTxDPape->TxVector.tv_FrameControl & (FRAME_TYPE_MASK | FRAME_SUBTYPE_MASK)) == MAC_FCTRL_DEAUTHENT))) {
                 id = hal_alloc_tx_id(hal_priv,pTxDescFiFo);
                 if (id == TXID_INVALID) {
-                    AML_PRINT_LOG_INFO("warning, please handle this situation!!!\n");
+                    AML_PRINT_LOG_INFO("warning, please handle this situation!!! vid:%d sn:0x%x fc:%x ptr:%x\n",pTxDescFiFo->pTxDPape->TxPriv.vid, pTxDescFiFo->pTxDPape->TxPriv.SN, pTxDescFiFo->pTxDPape->TxVector.tv_FrameControl , pTxDescFiFo->pTxDPape);
                     break;//how to handle this situation
                 }
                 pTxDescFiFo->pTxDPape->TxPriv.hostcallbackid= (unsigned char)id;
             }
 
+            STATUS = CO_SharedFifoGet(pTxShareFifo, CO_TX_BUFFER_MAKE, 1, &EltPtr);
+            ASSERT(STATUS == CO_STATUS_OK);
             STATUS = CO_SharedFifoPut(pTxShareFifo, CO_TX_BUFFER_MAKE, 1);
+            ASSERT(STATUS == CO_STATUS_OK);
         }
 
         while (CO_SharedFifoEmpty(pTxShareFifo, CO_TX_BUFFER_SET)) {
             STATUS = CO_SharedFifoGet(pTxShareFifo, CO_TX_BUFFER_SET, 1, &EltPtr);
             pTxDescFiFo = (struct fw_txdesc_fifo *)EltPtr;
 
-            if ((pTxDescFiFo->pTxDPape->TxPriv.vid == vid) || (vid == 3)) {
+            if (((pTxDescFiFo->pTxDPape->TxPriv.vid == vid) &&
+                ((pTxDescFiFo->pTxDPape->TxVector.tv_FrameControl & (FRAME_TYPE_MASK | FRAME_SUBTYPE_MASK)) != MAC_FCTRL_DEAUTHENT)) || (vid == 3)) {
                 txstatus.callbackid = pTxDescFiFo->pTxDPape->TxPriv.hostcallbackid;
                 txstatus.txstatus = TX_DESCRIPTOR_STATUS_SUCCESS;
+                /*should consider back id = 0, and not alloc tx id ,but tx id 0 is another valid frame*/
+                if (txstatus.callbackid == 0 && !(pTxDescFiFo->pTxDPape->TxPriv.reserve & WIFI_TXFRAME_TXID_VALID)) {
+                    queue_id = pTxDescFiFo->txqueueid;
+                } else {
+                    hal_free_tx_id(hal_priv, &txstatus, &callback, &queue_id);
+                }
 
-                hal_free_tx_id(hal_priv, &txstatus, &callback, &queue_id);
                 hal_priv->hal_call_back->intr_tx_handle(hal_priv->drv_priv, &txstatus, pTxDescFiFo->callback, queue_id);
 
                 __sync_fetch_and_add(&hif->HiStatus.Tx_Done_num,1);
                 __sync_fetch_and_add(&hif->HiStatus.Tx_Free_num,1);
-
             } else {
                 remain_eltptr[remain_count++] = EltPtr;
+                COMMON_LOCK();
+                txstatus.callbackid = pTxDescFiFo->pTxDPape->TxPriv.hostcallbackid;
+                id = txstatus.callbackid;
+                pTxFrameDesc = &hal_priv->tx_frames[id];
+                callback = pTxFrameDesc->callback;
+                queue_id = pTxFrameDesc->txqueueid;
+                pTxDescFiFo->pTxDPape->TxPriv.hostcallbackid = 0;
+                ASSERT(id < WIFI_MAX_TXFRAME);
+                test_and_clear_bit(id, hal_priv->tx_frames_map);
+                COMMON_UNLOCK();
             }
             STATUS = CO_SharedFifoPut(pTxShareFifo, CO_TX_BUFFER_SET, 1);
         }
 
         for (i = 0; i < remain_count; ++i) {
-            STATUS = CO_SharedFifoGet(&hal_priv->txds_trista_fifo[queueid],CO_TX_BUFFER_GET, 1, &EltPtr);
+            STATUS = CO_SharedFifoGet(&hal_priv->txds_trista_fifo[queueid], CO_TX_BUFFER_GET, 1, &EltPtr);
             memcpy(EltPtr, remain_eltptr[i], sizeof(struct fw_txdesc_fifo));
-            STATUS = CO_SharedFifoPut(&hal_priv->txds_trista_fifo[queueid],CO_TX_BUFFER_GET, 1);
+            STATUS = CO_SharedFifoPut(&hal_priv->txds_trista_fifo[queueid], CO_TX_BUFFER_GET, 1);
         }
 
         remain_count = 0;
@@ -1845,8 +1871,8 @@ int hal_get_agg_pend_cnt(void)
 
     if (hal_priv->bhaltxdrop == 1) {
         hal_priv->bhaltxdrop = 0;
-        AML_PRINT_LOG_INFO("recover bhaltxdrop to 0, tx_frames_map:%lx, %lx, page:%d, vid:%d\n",
-            hal_priv->tx_frames_map[0], hal_priv->tx_frames_map[1], hal_priv->txPageFreeNum, vid);
+        AML_PRINT_LOG_INFO("clear bhaltxdrop to 0, vid:%d, free_page_num:%d, tx_frames_map:%lx, %lx\n",
+            vid, hal_priv->txPageFreeNum, hal_priv->tx_frames_map[0], hal_priv->tx_frames_map[1]);
     }
     return 0;
 }
@@ -2013,7 +2039,7 @@ int hal_download_fw(void)
     AML_PRINT_LOG_INFO("-----start download firmware\n");
 
     if (aml_bus_type == 1) {
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
         err = hal_download_usb_fw_img();
 #endif
     }
@@ -2418,7 +2444,7 @@ int hal_init_priv(void)
     hif->CommStaticParam.bus_type = aml_wifi_get_bus_type();
 
     if (aml_bus_type == 1) {
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
         AML_PRINT_LOG_INFO("usb ops init!\n");
         hif->CommStaticParam.tx_page_len = PAGE_LEN_USB;
         hif_init_usb_ops();
@@ -2441,6 +2467,7 @@ int hal_init_priv(void)
     hal_priv->hif = hif_get_hw_interface();
 
     HAL_LOCK_INIT();
+    HAL_SPEC_LOCK_INIT();
     POWER_LOCK_INIT();
     COMMON_LOCK_INIT();
     AML_TXLOCK_INIT();
@@ -2594,7 +2621,7 @@ void hal_exit_priv(void)
 #endif
 
     if (aml_bus_type) {
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
         aml_usb_exit();
 #endif
     }
@@ -2609,6 +2636,7 @@ void hal_exit_priv(void)
 #endif
 
     HAL_LOCK_DESTROY();
+    HAL_SPEC_LOCK_DESTROY();
     POWER_LOCK_DESTROY();
     AML_TXLOCK_DESTROY();
     COMMON_LOCK_DESTROY();
@@ -3138,7 +3166,7 @@ void show_rxvector (HW_RxDescripter_bit *RxPrivHdr)
 {
     PRINT("%s+++\n", __FUNCTION__);
     PRINT("%s dump rx PN\n", __FUNCTION__);
-    dump_memory_internel((unsigned char *)RxPrivHdr->PN, 16);
+    dump_memory_internal((unsigned char *)RxPrivHdr->PN, 16);
     PRINT("RxRSSI_ant0=%d RxRSSI_ant1=%d\n",
           RxPrivHdr->RxRSSI_ant0, RxPrivHdr->RxRSSI_ant1);
     PRINT("RxChannel=%d\n", RxPrivHdr->RxChannel);
@@ -3173,11 +3201,11 @@ void show_rxvector (HW_RxDescripter_bit *RxPrivHdr)
  void hal_show_rxframe (HW_RxDescripter_bit *RxPrivHdr)
 {
     PRINT("%s dump HW_RxDescripter_bit, len=%zd\n", __FUNCTION__, RX_PRIV_HDR_LEN);
-    dump_memory_internel((unsigned char*)RxPrivHdr, RX_PRIV_HDR_LEN);
+    dump_memory_internal((unsigned char*)RxPrivHdr, RX_PRIV_HDR_LEN);
     show_rxvector(RxPrivHdr);
 
     PRINT("%s dump body, len=%d(0x%x)\n", __FUNCTION__, RxPrivHdr->RxLength, RxPrivHdr->RxLength);
-    dump_memory_internel((unsigned char*)RxPrivHdr->data, RxPrivHdr->RxLength);
+    dump_memory_internal((unsigned char*)RxPrivHdr->data, RxPrivHdr->RxLength);
     show_macframe((unsigned char *)RxPrivHdr->data, RxPrivHdr->RxLength);
 }
 
@@ -3316,7 +3344,7 @@ void show_tx_option (struct HW_TxOption *TxOption)
     PRINT("%s+++\n", __FUNCTION__);
     PRINT("KeyIdex=%d\n", TxOption->KeyIdex);
     PRINT("%s dump tx PN\n", __FUNCTION__);
-    dump_memory_internel((unsigned char *)TxOption->PN, 16);
+    dump_memory_internal((unsigned char *)TxOption->PN, 16);
     PRINT("%s---\n", __FUNCTION__);
 }
 
@@ -3583,13 +3611,11 @@ void hal_txinfo_show()
 void hal_dpd_memory_download(void)
 {
 #if 1
-#ifdef SDIO_MODE_ON
-    unsigned int reg_tmp;
-#endif
     struct hw_interface* hif = hif_get_hw_interface();
     unsigned char * d_ptr = NULL;
     unsigned int addr = DPD_MEMORY_ADDR;
     int len = 0, offset = 0;
+    unsigned int reg_tmp;
 
     d_ptr = (unsigned char *)MEMDATA;
     /* 1024 words */
@@ -3602,6 +3628,7 @@ void hal_dpd_memory_download(void)
     ASSERT(len > 0);
     ASSERT(len <= DPD_MEMORY_LEN);
 
+    HAL_SPEC_BEGIN_LOCK();
     if(aml_bus_type) {
         //set ram share
         hif->hif_ops.hi_write_word(0x00a0d0e4, 0x0100007f);
@@ -3612,21 +3639,22 @@ void hal_dpd_memory_download(void)
         //set ram share
         hif->hif_ops.hi_write_word(0x00a0d0e4, 0x8000007f);
     }
-    if(!aml_bus_type) {
-    /*
-     * make sure function 5 section address-mapping feature is disabled,
-     * when this feature is disabled,
-     * all 128k space in one sdio-function use only
-     * one address-mapping: 32-bit AHB Address = BaseAddr + cmdRegAddr
-     */
-        reg_tmp = hif->hif_ops.hi_read_word(RG_SDIO_IF_MISC_CTRL);
 
-        if (!(reg_tmp & BIT(23))) {
-            reg_tmp |= BIT(23);
-            hif->hif_ops.hi_write_word(RG_SDIO_IF_MISC_CTRL , reg_tmp);
-        }
-        /*config msb 15 bit address in BaseAddr Register*/
-        hif->hif_ops.hi_write_reg32(RG_SCFG_FUNC5_BADDR_A, addr & 0xfffe0000);
+    if (!aml_bus_type) {
+        /*
+         * make sure function 5 section address-mapping feature is disabled,
+         * when this feature is disabled,
+         * all 128k space in one sdio-function use only
+         * one address-mapping: 32-bit AHB Address = BaseAddr + cmdRegAddr
+         */
+            reg_tmp = hif->hif_ops.hi_read_word(RG_SDIO_IF_MISC_CTRL);
+
+            if (!(reg_tmp & BIT(23))) {
+                reg_tmp |= BIT(23);
+                hif->hif_ops.hi_write_word(RG_SDIO_IF_MISC_CTRL , reg_tmp);
+            }
+            /*config msb 15 bit address in BaseAddr Register*/
+            hif->hif_ops.hi_write_reg32(RG_SCFG_FUNC5_BADDR_A, addr & 0xfffe0000);
     }
 #endif
     /* len <= DPD_MEMORY_LEN, just for exception */
@@ -3645,18 +3673,17 @@ void hal_dpd_memory_download(void)
             hif->hif_ops.bt_hi_write_sram(sdio_kmm,
                             (unsigned char*)(SYS_TYPE)(addr + offset), databyte);
         }
-#ifdef SDIO_MODE_ON
         else {
-                hif->hif_ops.bt_hi_write_sram(sdio_kmm,
-                    (unsigned char*)(SYS_TYPE)((addr & 0x1ffff) + offset), databyte);
+            hif->hif_ops.bt_hi_write_sram(sdio_kmm,
+                (unsigned char*)(SYS_TYPE)((addr & 0x1ffff) + offset), databyte);
         }
-#endif
 
         len -= databyte;
         offset += databyte;
 
         FREE(sdio_kmm, "dpd memory");
     } while(len > 0);
+    HAL_SPEC_END_LOCK();
 #endif
 }
 

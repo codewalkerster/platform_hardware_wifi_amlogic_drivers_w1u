@@ -195,7 +195,7 @@ void drv_set_protmode( struct drv_private *drv_priv, enum prot_mode mode)
     drv_priv->drv_protect_mode = mode;
 }
 
-static unsigned char aml_convert_tid(struct drv_txdesc *ptxdesc)
+unsigned char aml_convert_tid(struct drv_txdesc *ptxdesc)
 {
     unsigned char TID;
     if (ptxdesc->txinfo->b_mgmt )
@@ -939,7 +939,7 @@ int drv_tx_start( struct drv_private *drv_priv, struct sk_buff *skbbuf)
             //if p2p ps frame, backup
             //if ps4quiet frame, backup; but if probereq, just send out
             if ((wnet_vif->vm_pstxqueue_flags & WIFINET_PSQUEUE_MASK) &&
-                !(((wnet_vif->vm_pstxqueue_flags & WIFINET_PSQUEUE_MASK) == WIFINET_PSQUEUE_PS4QUIET) && (WIFINET_IS_PROBEREQ(wh))))
+                !(((wnet_vif->vm_pstxqueue_flags & WIFINET_PSQUEUE_MASK) & (WIFINET_PSQUEUE_PS4QUIET | WIFINET_PSQUEUE_NOA)) && (WIFINET_IS_PROBEREQ(wh))))
             {
                 if (wnet_vif->vm_state != WIFINET_S_CONNECTED)
                 {
@@ -1544,17 +1544,17 @@ static void drv_tx_complete_task(struct drv_private *drv_priv, struct drv_txlist
 
                 if (ptxdesc->txinfo->b_Ampdu) {
                     if (ptxdesc->txdesc_queue_last != ptxdesc) {
-                        AML_PRINT(AML_LOH_ID_RATE_CTR,AML_LOG_LEVEL_DEBUG, "first status:%d, ts.ts_longretry:%d, ts.ts_shortretry:%d, rate:%02x:%02x:%02x, bw:%d, seqnum:%04x, vid:%d, rssi:%d, snr:%d\n", status,
+                        AML_PRINT(AML_LOG_ID_RATE_CTR,AML_LOG_LEVEL_DEBUG, "first status:%d, ts.ts_longretry:%d, ts.ts_shortretry:%d, rate:%02x:%02x:%02x, bw:%d, seqnum:%04x, vid:%d, rssi:%d, snr:%d\n", status,
                             ts.ts_longretry, ts.ts_shortretry, ptxdesc->txdesc_rateinfo[0].vendor_rate_code, ptxdesc->txdesc_rateinfo[1].vendor_rate_code,
                             ptxdesc->txdesc_rateinfo[2].vendor_rate_code, ptxdesc->txdesc_rateinfo[0].bw, ptxdesc->txinfo->seqnum, ptxdesc->txinfo->wnet_vif_id, sta->sta_avg_bcn_rssi, sta->sta_avg_snr);
 
                     } else {
-                        AML_PRINT(AML_LOH_ID_RATE_CTR,AML_LOG_LEVEL_DEBUG, "status:%d, ts.ts_longretry:%d, ts.ts_shortretry:%d, rate:%02x:%02x:%02x, bw:%d, seqnum:%04x, vid:%d, rssi:%d, snr:%d\n", status,
+                        AML_PRINT(AML_LOG_ID_RATE_CTR,AML_LOG_LEVEL_DEBUG, "status:%d, ts.ts_longretry:%d, ts.ts_shortretry:%d, rate:%02x:%02x:%02x, bw:%d, seqnum:%04x, vid:%d, rssi:%d, snr:%d\n", status,
                             ts.ts_longretry, ts.ts_shortretry, ptxdesc->txdesc_rateinfo[0].vendor_rate_code, ptxdesc->txdesc_rateinfo[1].vendor_rate_code,
                             ptxdesc->txdesc_rateinfo[2].vendor_rate_code, ptxdesc->txdesc_rateinfo[0].bw, ptxdesc->txinfo->seqnum, ptxdesc->txinfo->wnet_vif_id, sta->sta_avg_bcn_rssi, sta->sta_avg_snr);
                     }
                 } else {
-                    AML_PRINT(AML_LOH_ID_RATE_CTR,AML_LOG_LEVEL_DEBUG, "status:%d, ts.ts_longretry:%d, ts.ts_shortretry:%d, rate:%02x:%02x:%02x, bw:%d, seqnum:%04x, vid:%d, rssi:%d, snr:%d\n", status,
+                    AML_PRINT(AML_LOG_ID_RATE_CTR,AML_LOG_LEVEL_DEBUG, "status:%d, ts.ts_longretry:%d, ts.ts_shortretry:%d, rate:%02x:%02x:%02x, bw:%d, seqnum:%04x, vid:%d, rssi:%d, snr:%d\n", status,
                         ts.ts_longretry, ts.ts_shortretry, ptxdesc->txdesc_rateinfo[0].vendor_rate_code, ptxdesc->txdesc_rateinfo[1].vendor_rate_code,
                         ptxdesc->txdesc_rateinfo[2].vendor_rate_code, ptxdesc->txdesc_rateinfo[0].bw, ptxdesc->txinfo->seqnum, ptxdesc->txinfo->wnet_vif_id, sta->sta_avg_bcn_rssi, sta->sta_avg_snr);
                 }
@@ -1813,6 +1813,10 @@ static void drv_txlist_free_all_by_drv_sta(struct drv_private *drv_priv, struct 
 void drv_txlist_flushfree(struct drv_private *drv_priv, unsigned char vid)
 {
     int i;
+    struct wifi_mac *wifimac = wifi_mac_get_mac_handle();
+
+    wifimac->txlist_flush_process = 1;
+    WIFINET_TXLIST_FLUASH_LOCK(wifimac);
 
     for (i = 0; i < HAL_NUM_TX_QUEUES; i++) {
         if (DRV_TXQUEUE_VALUE(drv_priv, i)) {
@@ -1822,6 +1826,8 @@ void drv_txlist_flushfree(struct drv_private *drv_priv, unsigned char vid)
     driv_ps_wakeup(drv_priv);
     drv_hal_settxqueueflush(vid);
     driv_ps_sleep(drv_priv);
+    WIFINET_TXLIST_FLUASH_UNLOCK(wifimac);
+    wifimac->txlist_flush_process = 0;
 }
 
 void free_txlist_when_free_sta(struct drv_private *drv_priv, void *nsta)

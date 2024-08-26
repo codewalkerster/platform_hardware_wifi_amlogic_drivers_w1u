@@ -321,7 +321,7 @@ int wifi_mac_connect(struct wlan_net_vif *wnet_vif, struct wifi_scan_info *se)
 
     wifi_mac_connect_start(wifimac);
 
-    if(aml_wifi_get_platform_verid() == 2) {
+    if ((aml_wifi_get_platform_verid() == 2) || hal_get_channel_2g_20Mhz_only()) {
         /*this is for gva_mrt version, fix 2.4G on 20M bandwidth*/
         if (WIFINET_IS_CHAN_2GHZ(se->SI_chan)) {
                 AML_PRINT_LOG_INFO("set bw 20M\n");
@@ -345,7 +345,7 @@ int wifi_mac_connect(struct wlan_net_vif *wnet_vif, struct wifi_scan_info *se)
     wnet_vif->vm_curchan = work_channel;
 
     /*then,  sta != vm_mainsta */
-    if(aml_wifi_get_platform_verid() == 2) {
+    if ((aml_wifi_get_platform_verid() == 2) || hal_get_channel_2g_20Mhz_only()) {
         /*this is for gva_mrt version, fix 2.4G on 20M bandwidth*/
         if (WIFINET_IS_CHAN_2GHZ(se->SI_chan)) {
             AML_PRINT_LOG_INFO("set bw 20M\n");
@@ -713,7 +713,10 @@ void wifi_mac_sta_leave(struct wifi_station *sta, int reassoc)
 
         drv_priv = wifimac->drv_priv;
         p2p_wnet_vif = drv_priv->drv_wnet_vif_table[NET80211_P2P_VMAC];
-        if (IS_APSTA_CONCURRENT(aml_wifi_get_con_mode()) && (p2p_wnet_vif->vm_opmode == WIFINET_M_HOSTAP) && (p2p_wnet_vif->vm_state == WIFINET_S_CONNECTED)) {
+        if (!(wifimac->wm_recovery_flags & WIFINET_RECOVERY_F_RUNNING)
+            && IS_APSTA_CONCURRENT(aml_wifi_get_con_mode())
+            && (p2p_wnet_vif->vm_opmode == WIFINET_M_HOSTAP)
+            && (p2p_wnet_vif->vm_state == WIFINET_S_CONNECTED)) {
             if (wifi_mac_p2p_home_channel_enabled(p2p_wnet_vif)) {
                 channel_switch_announce_trigger(wifimac, wifimac->wm_p2p_home_channel, WIFINET_BWC_WIDTH20, wifimac->wm_p2p_home_channel);
             } else {
@@ -908,7 +911,7 @@ struct wifi_station *wifi_mac_get_new_sta_node(struct wifi_station_tbl *nt,
     os_timer_ex_initialize(&sta->csa_timer, 0, wifi_mac_csa_handle_timeout, sta);
 
     WIFINET_ADDR_COPY(sta->sta_macaddr, macaddr);
-    //dump_memory_internel(macaddr, 6);
+    //dump_memory_internal(macaddr, 6);
     hash = WIFINET_NODE_HASH(macaddr);
     sta->sta_authmode = WIFINET_AUTH_OPEN;
     sta->sta_txpower = wifimac->wm_txpowlimit;
@@ -1785,7 +1788,7 @@ void wifi_mac_func_to_task_cb(SYS_TYPE param1, SYS_TYPE param2, SYS_TYPE param3,
 
 void wifi_mac_sta_disassoc(void *arg, struct wifi_station *sta)
 {
-    struct wlan_net_vif *wnet_vif = arg;	
+    struct wlan_net_vif *wnet_vif = arg;
     struct wifi_station_tbl *nt = &(wnet_vif->vm_sta_tbl);
     int mgmt_arg = WIFINET_REASON_ASSOC_LEAVE;
 
@@ -2215,6 +2218,7 @@ void wifi_mac_rst_main_sta(struct wlan_net_vif *wnet_vif)
         sta->sta_flags = 0;
         sta->sta_flags_ext = 0;
         memset(&sta->sta_rsn, 0, sizeof(struct wifi_mac_Rsnparms));
+        wnet_vif->vm_flags &= ~WIFINET_F_WPA;
     }
 }
 
@@ -2254,6 +2258,7 @@ void wifi_mac_sta_attach(struct wifi_mac *wifimac)
     os_timer_ex_initialize(&wifimac->wm_inact_timer, WIFINET_INACT_WAIT*1000, wifi_mac_StationTimeout, wifimac);
     os_timer_ex_start(&wifimac->wm_inact_timer);
     os_timer_ex_initialize(&wifimac->wm_free_timer, WIFINET_NODE_FREE_WAIT, wifi_mac_free_sta_delay, wifimac);
+    WIFINET_TXLIST_FLUASH_INIT(wifimac);
 }
 
 void
@@ -2262,6 +2267,7 @@ wifi_mac_StationDetach(struct wifi_mac *wifimac)
     wifi_mac_free_sta_now(wifimac);
     os_timer_ex_del(&wifimac->wm_free_timer, CANCEL_SLEEP);
     os_timer_ex_del(&wifimac->wm_inact_timer, CANCEL_SLEEP);
+    WIFINET_TXLIST_FLUASH_DESTROY(wifimac);
 }
 
 struct sk_buff *wifi_mac_get_mgmt_frm(struct wifi_mac *wifimac, unsigned int pktlen)

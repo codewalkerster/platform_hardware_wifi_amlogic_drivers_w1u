@@ -118,7 +118,7 @@ static void vm_cfg80211_monitor_if_destructor(struct net_device *ndev)
 
     if (ndev->ieee80211_ptr)
         FREE((unsigned char *)ndev->ieee80211_ptr,"mwdev");
-    
+
     free_netdev(ndev);
 }
 static int vm_cfg80211_go_if_xmit_entry(struct sk_buff *skb, struct net_device *ndev)
@@ -127,7 +127,7 @@ static int vm_cfg80211_go_if_xmit_entry(struct sk_buff *skb, struct net_device *
 
     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO,"<%s>:<%s>\n", wnet_vif->vm_ndev->name,ndev->name);
 
-    dump_memory_internel(skb->data,32);
+    dump_memory_internal(skb->data,32);
     return wifi_mac_hardstart(skb, wnet_vif->vm_ndev);
 }
 

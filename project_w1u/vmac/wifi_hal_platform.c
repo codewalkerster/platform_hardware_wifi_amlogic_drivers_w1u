@@ -14,7 +14,9 @@ namespace FW_NAME
 #include "wifi_usb.h"
 #include "chip_intf_reg.h"
 #if defined (HAL_FPGA_VER)
+#ifndef UBUNTU_PT_MODE
 #include <linux/amlogic/aml_gpio_consumer.h>
+#endif
 #include "wifi_mac_com.h"
 #include <linux/delay.h>
 #endif
@@ -42,7 +44,7 @@ struct platform_wifi_gpio amlhal_gpio =
 };
 extern int wifi_irq_trigger_level(void);
 extern int wifi_irq_num(void);
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
 extern struct urb *g_urb;
 extern unsigned char *g_buffer;
 void aml_usb_ctlread_complete(struct urb *urb)
@@ -736,7 +738,19 @@ int hal_download_sdio_fw_img(void)
         offset += databyte;
         len -= databyte;
     } while(len > 0);
+#ifdef PNO_SUPPORT
+    if (fw->size >= ICCM_RAM_LEN + DCCM_LEN + EXT_RAM_LEN) {
+        len = fw->size - ICCM_RAM_LEN - DCCM_LEN - SRAM_LEN;
+        if (len > EXT_RAM_LEN) {
+            len = EXT_RAM_LEN;
+        }
+        offset = 0;
+        hif->hif_ops.hi_write_reg32(RG_SCFG_SRAM_FUNC, MAC_REG_BASE);
+        src = (unsigned char *)(fw->data + ICCM_RAM_LEN + DCCM_LEN + SRAM_LEN);
 
+        hif->hif_ops.hi_write_sram(src, (unsigned char*)(SYS_TYPE)(MAC_SRAM_BASE + SRAM_LEN), len);
+    }
+#endif
     /* Starting run firmware */
     //set baseaddr to sram
     hif->hif_ops.hi_write_reg32(RG_SCFG_SRAM_FUNC, MAC_REG_BASE);
@@ -817,7 +831,7 @@ int hal_download_sdio_fw_img(void)
 }
 #endif
 
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
 int hal_download_usb_fw_img(void)
 {
     struct hal_private *hal_priv = hal_get_priv();
@@ -901,6 +915,15 @@ char *bus_type = "usb";
 #endif
 #ifdef CONFIG_MAC_SUPPORT
 extern u8 *wifi_get_mac(void);
+
+#ifdef UBUNTU_PT_MODE
+u8 g_temp_addr[ETH_ALEN]={0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+u8 *wifi_get_mac(void)
+{
+    return g_temp_addr;
+}
+#endif
+
 #endif
 extern void print_driver_version(void);
 
@@ -1104,7 +1127,7 @@ int _aml_insmod(void)
     //dma interface or sdio interface init
     if (aml_bus_type == 1) {
         AML_PRINT_LOG_INFO("bus interface is USB!!!!!\n");
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
         ret = aml_usb_init();
 #endif
     }
@@ -1118,7 +1141,7 @@ int _aml_insmod(void)
     if (strncmp(bus_type,"usb",3) == 0) {
         AML_PRINT_LOG_INFO("bus interface is USB!!!!!\n");
         aml_bus_type = 1;
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
         ret = aml_usb_init();
 #endif
     } else if (strncmp(bus_type,"sdio",4) == 0) {
@@ -1152,7 +1175,7 @@ insmod_failed:
 void aml_disable_wifi(void)
 {
     if (aml_bus_type == 1) {
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
         aml_usb_disable_wifi();
 #endif
     }
@@ -1169,7 +1192,7 @@ void aml_enable_wifi(void)
 
     AML_PRINT_LOG_INFO("aml_enable_wifi start\n");
     if (aml_bus_type == 1) {
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
         aml_usb_enable_wifi();
 #endif
     }
@@ -1182,6 +1205,7 @@ void aml_enable_wifi(void)
     hal_priv->HalTxFrameDoneCounter = 0;
     hal_priv->txcompletestatus->txpagecounter = 0;
     hal_priv->HalTxPageDoneCounter = 0;
+    hal_priv->powersave_init_flag = 0;
 
     AML_PRINT_LOG_INFO("aml_enable_wifi end\n");
 }
@@ -1280,6 +1304,9 @@ MODULE_PARM_DESC(country_code,"A string variable to describe country code");
 
 module_param(bus_type, charp,S_IRUSR | S_IRGRP | S_IROTH);
 MODULE_PARM_DESC(bus_type,"A string variable to adjust sdio or usb bus interface");
+
+module_param(regdom_scheme, ushort, S_IRUGO);
+MODULE_PARM_DESC(regdom_scheme, "A uint8 variable to adjust which scheme of regdom w1u use.");
 
 #endif
 

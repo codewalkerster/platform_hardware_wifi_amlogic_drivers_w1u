@@ -2,6 +2,12 @@
 #define __WIFI_DEV_CAPTURE_H
 #include "wifi_hal_com.h"
 
+#ifdef UBUNTU_PT_MODE
+#include <asm/uaccess.h>
+#include <linux/uaccess.h>
+#include <linux/unistd.h>
+#endif
+
 #define TESTBUSBUF_LEN  0x8000
 
 int dut_start_capture(unsigned int value);

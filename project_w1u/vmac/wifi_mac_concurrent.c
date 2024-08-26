@@ -290,7 +290,7 @@ void channel_switch_announce_trigger(struct wifi_mac *wifimac, unsigned int chan
     }
 
     if (p2p_wnet_vif->vm_curchan && (p2p_wnet_vif->vm_curchan->chan_pri_num == chan_pri_num) && (p2p_wnet_vif->vm_curchan->chan_bw == bandwidth)) {
-        AML_PRINT_LOG_INFO("channel[%d] bandwidth[%d] switch not trigger! \n",chan_pri_num, bandwidth);
+        AML_PRINT_LOG_WRAN("channel[%d] bandwidth[%d] switch not trigger! \n",chan_pri_num, bandwidth);
         return;
     }
 
@@ -299,7 +299,7 @@ void channel_switch_announce_trigger(struct wifi_mac *wifimac, unsigned int chan
         return;
     }
 
-    AML_PRINT(AML_LOG_ID_BEACON, AML_LOG_LEVEL_DEBUG,"chan_pri_num:%d, delay_ms:%d\n",chan_pri_num,delay_ms);
+    AML_PRINT(AML_LOG_ID_BEACON, AML_LOG_LEVEL_INFO,"chan_pri_num:%d, delay_ms:%d\n",chan_pri_num,delay_ms);
     if (IS_APSTA_CONCURRENT(aml_wifi_get_con_mode()) && concurrent_check_vmac_is_AP(wifimac)) {
         p2p_wnet_vif->vm_wmac->wm_flags |= WIFINET_F_DOTH;
         p2p_wnet_vif->vm_wmac->wm_flags |= WIFINET_F_CHANSWITCH;

@@ -61,7 +61,7 @@ extern unsigned int HZ;
 #include <linux/ieee80211.h>
 #include <linux/slab.h>
 #include <net/mac80211.h>
-#endif 
+#endif
 #include "wifi_debug.h"
 #include "osdep.h"
 #include "rc80211_minstrel.h"
@@ -223,7 +223,7 @@ unsigned int minstrel_legacy_rate_convert_to_ordinary(unsigned int rate)
             case WIFI_11G_24M:
                 ret = 24;
                 break;
-            case WIFI_11G_36M: 
+            case WIFI_11G_36M:
                 ret = 36;
                 break;
             case WIFI_11G_48M:
@@ -306,7 +306,7 @@ static void minstrel_update_stats(struct minstrel_priv *mp, struct minstrel_sta_
 
                 } else {
                     if (tp_rate[j-1]>i ) {
-                        tp_rate[j] = i; 
+                        tp_rate[j] = i;
                     }
                 }
             }
@@ -316,15 +316,6 @@ static void minstrel_update_stats(struct minstrel_priv *mp, struct minstrel_sta_
     /* Assign the new rate set */
     memcpy(mi->max_tp_rate, tp_rate, sizeof(mi->max_tp_rate));
     mi->max_prob_rate = tmp_prob_rate;
-
-#ifdef CONFIG_MAC80211_DEBUGFS
-    /* use fixed index if set */
-    if (mp->fixed_rate_idx != -1) {
-        mi->max_tp_rate[0] = mp->fixed_rate_idx;
-        mi->max_tp_rate[1] = mp->fixed_rate_idx;
-        mi->max_prob_rate = mp->fixed_rate_idx;
-    }
-#endif
 
     /* Reset update timer */
     mi->last_stats_update = jiffies;
@@ -425,10 +416,7 @@ static void minstrel_get_rate(void *priv, struct ieee80211_sta_aml *sta, void *p
 
 	/* increase sum packet counter */
 	mi->total_packets++;
-#ifdef CONFIG_MAC80211_DEBUGFS
-	if (mp->fixed_rate_idx != -1)
-		return;
-#endif
+
 	delta = (mi->total_packets * sampling_ratio / 100) - (mi->sample_packets + mi->sample_deferred / 2);
 
 	/* delta < 0: no sampling required */
@@ -488,7 +476,7 @@ static void minstrel_get_rate(void *priv, struct ieee80211_sta_aml *sta, void *p
 
 	rate->idx = mi->r[ndx].rix;
 	rate->count = minstrel_get_retry_count(&mi->r[ndx], info);
-	AML_PRINT(AML_LOH_ID_RATE_CTR,AML_LOG_LEVEL_DEBUG, "sample rate->idx =%d, rate->count:%d, msr->perfect_tx_time:%d, mr->perfect_tx_time:%d\n",
+	AML_PRINT(AML_LOG_ID_RATE_CTR,AML_LOG_LEVEL_DEBUG, "sample rate->idx =%d, rate->count:%d, msr->perfect_tx_time:%d, mr->perfect_tx_time:%d\n",
 		rate->idx, rate->count, msr->perfect_tx_time, mr->perfect_tx_time);
 }
 
@@ -760,9 +748,6 @@ minstrel_alloc(struct ieee80211_hw *hw)
 static void
 minstrel_free(void *priv)
 {
-#ifdef CONFIG_MAC80211_DEBUGFS
-	debugfs_remove(((struct minstrel_priv *)priv)->dbg_fixed_rate);
-#endif
 	FREE(priv, "minstrel_priv");
 }
 

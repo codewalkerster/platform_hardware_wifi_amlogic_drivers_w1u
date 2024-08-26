@@ -318,7 +318,7 @@ struct wifi_mac_ops
 
     int (*wifi_mac_recovery_record_vif)(struct wlan_net_vif * wnet_vif);
     void (*wifi_mac_recovery_host_reset)(struct wifi_mac * wifimac);
-    void (*wifi_mac_vif_restore_end)(struct wlan_net_vif * wnet_vif);
+    int (*wifi_mac_vif_restore_end)(struct wlan_net_vif * wnet_vif);
     void (*wifi_mac_recovery_host_restore)(struct wifi_mac * wifimac);
     void (*wifi_mac_process_recovery)(struct wifi_mac * wifimac);
 
@@ -401,6 +401,11 @@ struct wifi_mac
     struct drv_private *drv_priv;
     struct wifi_mac_wme_state wm_wme[DEFAULT_MAX_VMAC];
     int wm_ac2q[WME_NUM_AC];
+
+    int wm_new_nchans;
+    struct wifi_channel wm_new_channels[WIFINET_CHAN_MAX * 2 + 1];
+    spinlock_t new_channel_lock;
+    unsigned long new_channel_lock_flag;
 
     int wm_nchans;
     struct wifi_channel wm_channels[WIFINET_CHAN_MAX * 2 + 1];
@@ -546,8 +551,11 @@ struct wifi_mac
     struct rf_test_recover rf_test_recover;
     unsigned char wm_zgb_exist_flag;
     unsigned int wow_wakeup_reason;
+    unsigned char sched_scan;
     unsigned char wm_wfa_enable;
     unsigned char cca_thrd_cfg;
+    spinlock_t wm_txlist_flush_lock;
+    unsigned char txlist_flush_process;
 };
 
 struct wifi_net_vif_ops

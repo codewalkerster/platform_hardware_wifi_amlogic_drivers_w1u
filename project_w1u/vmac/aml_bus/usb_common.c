@@ -5,7 +5,7 @@ unsigned char wifi_usb_access = 1;
 typedef void (*lp_shutdown_func)(void);
 lp_shutdown_func g_lp_shutdown_func;
 
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
 struct auc_hif_ops_for_wifi g_auc_hif_ops_for_wifi;
 struct auc_hif_ops g_auc_hif_ops;
 struct usb_device *g_udev = NULL;

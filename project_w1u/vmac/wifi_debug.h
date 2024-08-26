@@ -43,10 +43,11 @@ typedef enum
     AML_LOG_ID_PWR_SAVE = 26, /* PS Poll and PS save */
     AML_LOG_ID_WME      = 27,
     AML_LOG_ID_DOTH     = 28,
-    AML_LOH_ID_RATE_CTR = 29, /* minstrel rate */
+    AML_LOG_ID_RATE_CTR = 29, /* minstrel rate */
     AML_LOG_ID_TX_MSDU  = 30,
     AML_LOG_ID_HAL_TX   = 31,
     AML_LOG_ID_FILTER   = 32,
+    AML_LOG_ID_TX_REC   = 33,
 
     AML_LOG_ID_MAX,
 }MODULE_ID;
@@ -206,7 +207,7 @@ extern struct _B2B_Platform_Conf gB2BPlatformConf;
 
 void address_print( unsigned char* address );
 void IPv4_address_print( unsigned char* address );
-void dump_memory_internel(unsigned char *data,int len);
+void dump_memory_internal(unsigned char *data,int len);
 void address_read( unsigned char* cursor, unsigned char* address );
 
  unsigned short READ_16L( const unsigned char* address );
@@ -222,5 +223,5 @@ void WRITE_32B( unsigned char* address, unsigned int value );
 void ie_dbg(unsigned char *ie ) ;
 void aml_set_all_debug_level(DEBUG_LEVEL level);
 void aml_set_debug_level(MODULE_ID module_id, DEBUG_LEVEL level);
-
+void wifi_debug_dump_data(unsigned char* data, unsigned int size, unsigned char bytes_per_line);
 #endif

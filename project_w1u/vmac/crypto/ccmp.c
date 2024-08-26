@@ -6,7 +6,12 @@
  * See README for more details.
  */
 
+#ifdef UBUNTU_PT_MODE
+#include "wifi_mac_com.h"
+#else
 #include "aml_crypto_wrap.h"
+#endif
+
 #include "aes.h"
 #include "aes_wrap.h"
 #include "wlancrypto_wrap.h"

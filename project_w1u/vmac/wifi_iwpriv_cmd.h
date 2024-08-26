@@ -46,6 +46,8 @@ extern struct iw_handler_def w1_iw_handle;
 #define MEM_PKT_lEN (112*1024*2)
 #define REG_LEN 0xf000
 #define MEM_ICCM_RAM_ADDR 0x00020000
+#define EFUSE_ADDR_4 0x04
+#define EFUSE_ADDR_5 0x05
 #define EFUSE_ADDR_9 0x09
 #define EFUSE_ADDR_A 0x0A
 #define EFUSE_ADDR_B 0x0B
@@ -54,6 +56,10 @@ extern struct iw_handler_def w1_iw_handle;
 #define EFUSE_ADDR_E 0x0E
 #define EFUSE_ADDR_F 0x0F
 #define RF_VLD_ENABLE 0x01
+#define EFUSE_ADDR_9_ILLEGAL_BIT 0xfff0ffff
+#define EFUSE_ADDR_A_ILLEGAL_BIT 0x0000ff00
+#define EFUSE_ADDR_A_LEGAL_BIT   0xffff00ff
+#define BT_DIGITAL_GAIN_EFUSE_MASK 0xffff0000
 
 enum
 {
@@ -151,6 +157,11 @@ enum efuse_domain {
     XOSC_CTUNE_DELTA,
 
     EFUSE_MAX_DOMAIN
+};
+
+enum write_type {
+    WRITE_FILE = 0,
+    WRITE_FILE_NODE = 1,
 };
 
 enum aml_iwpriv_subcmd
@@ -265,6 +276,10 @@ enum aml_iwpriv_subcmd
     AML_IWP_GET_EFUSE_TMP = 108,
     AML_IWP_SET_ANT_SWITCH = 109,
     AML_IWP_SET_WFA_MODE = 110,
+    AML_IWP_SET_PT_EFUSE = 111,
+    AML_IWP_GET_BT_DIGITAL_GAIN_EFUSE_TIMES = 112,
+    AML_IWP_SET_BT_DIGITAL_GAIN_EFUSE = 113,
+    AML_IWP_GET_BT_DIGITAL_GAIN_EFUSE = 114,
 };
 
 extern void dump_spec_regs_val(struct wlan_net_vif *wnet_vif, int reg_domain);
@@ -276,4 +291,5 @@ extern unsigned char g_iwpriv_get_spec_regs_flag;
 void aml_get_rate_bw(unsigned char bw, unsigned char *name);
 void aml_get_rate_idx(unsigned char rate, unsigned char *name);
 void aml_get_rate_gi(unsigned char gi, unsigned char *name);
+int aml_get_rvr_info(struct wlan_net_vif *wnet_vif, unsigned char *buf, unsigned char write_type);
 #endif

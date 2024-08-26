@@ -98,7 +98,12 @@ static int writeFile(struct file *fp, char *buf, int len)
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
         wlen = kernel_write(fp, buf + sum, len - sum, &fp->f_pos);
 #elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0))
-        wlen = __vfs_write(fp, buf + sum, len - sum, &fp->f_pos);
+#ifdef UBUNTU_PT_MODE
+        wlen = kernel_write(fp, buf + sum, len - sum, &fp->f_pos);
+#else
+        wlen = vfs_write(fp, buf + sum, len - sum, &fp->f_pos);
+#endif
+
 #else
         wlen = fp->f_op->write(fp, buf + sum, len - sum, &fp->f_pos);
 #endif
@@ -182,7 +187,7 @@ int isFileReadable(const char *path, u32 *sz)
 * @param sz how many bytes to read at most
 * @return the byte we've read, or Linux specific error code
 */
-static int retriveFromFile(const char *path, u8 *buf, u32 sz)
+static int retrieveFromFile(const char *path, u8 *buf, u32 sz)
 {
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)) || defined (LINUX_PLATFORM)
@@ -328,7 +333,7 @@ int aml_readable_file_sz_chk(const char *path, u32 sz)
 */
 int aml_retrieve_from_file(const char *path, u8 *buf, u32 sz)
 {
-    int ret = retriveFromFile(path, buf, sz);
+    int ret = retrieveFromFile(path, buf, sz);
     return ret >= 0 ? ret : 0;
 }
 

@@ -23,6 +23,10 @@
 #define WIFINET_AMSDU_TASKLET_LOCK(_ic) OS_SPIN_LOCK(&(_ic)->wm_amsdu_tasklet_lock)
 #define WIFINET_AMSDU_TASKLET_UNLOCK(_ic) OS_SPIN_UNLOCK(&(_ic)->wm_amsdu_tasklet_lock)
 
+#define WIFINET_TXLIST_FLUASH_INIT(_wm) spin_lock_init(&(_wm)->wm_txlist_flush_lock)
+#define WIFINET_TXLIST_FLUASH_DESTROY(_wm)
+#define WIFINET_TXLIST_FLUASH_LOCK(_wm) OS_SPIN_LOCK(&(_wm)->wm_txlist_flush_lock)
+#define WIFINET_TXLIST_FLUASH_UNLOCK(_wm) OS_SPIN_UNLOCK(&(_wm)->wm_txlist_flush_lock)
 
 struct wifi_mac_msdu_node
 {

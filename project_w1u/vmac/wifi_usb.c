@@ -12,7 +12,7 @@
  ****************************************************************************************
  */
 
-#ifndef CONFIG_USB_CLOSE
+#ifdef CONFIG_USB
 #ifdef HAL_SIM_VER
 #ifdef FW_NAME
 namespace FW_NAME
@@ -537,7 +537,7 @@ int wifi_dccm_download(unsigned char *src, unsigned int len)
     struct hw_interface* hif = hif_get_hw_interface();
     struct usb_device *udev = hif->udev;
 
-    AML_PRINT_LOG_INFO("dccm_download, addr 0x%x, len %d \n", src, len);
+    AML_PRINT_LOG_INFO("dccm_downed, addr 0x%x, len %d \n", src, len);
     aml_usb_build_cbw(g_cbw_buf, AML_XFER_TO_DEVICE, len, CMD_DOWNLOAD_WIFI, base_addr, 0, len);
     USB_BEGIN_LOCK();
     /* cmd stage */
@@ -571,11 +571,11 @@ int wifi_dccm_download(unsigned char *src, unsigned int len)
 
     USB_END_LOCK();
 #elif defined (HAL_SIM_VER)
-    PRINT("dccm_download, addr 0x%x, len %d \n", addr, len);
+    PRINT("dccm_downed, addr 0x%x, len %d \n", addr, len);
     while (offset < len) {
         if (offset + trans_len > len)
             trans_len = len - offset;
-        PRINT("dccm_download, addr+offset 0x%x, actual_len %d \n", base_addr + offset, trans_len);
+        PRINT("dccm_downed, addr+offset 0x%x, actual_len %d \n", base_addr + offset, trans_len);
         crg_msc_request(trans_len, CRG_XFER_TO_DEVICE, CMD_DOWNLOAD_WIFI,
             base_addr + offset/*dest*/, (unsigned long)addr/*src*/, trans_len, NULL);
         offset += trans_len;
@@ -1289,7 +1289,9 @@ extern struct usb_device *g_udev;
 extern struct auc_hif_ops_for_wifi g_auc_hif_ops_for_wifi;
 extern unsigned char auc_driver_insmoded;
 extern int aml_usb_insmod(void);
+#ifndef UBUNTU_PT_MODE
 extern void set_usb_wifi_power(int is_on);
+#endif
 extern struct crg_msc_cbw *g_cmd_buf;
 extern struct mutex auc_usb_mutex;
 extern unsigned char auc_driver_probed;
@@ -1429,15 +1431,18 @@ void aml_usb_disable_wifi(void)
     recovery_done = 0;
 
     /* 1.chip en off, usb disconnect */
+#ifndef UBUNTU_PT_MODE
     set_usb_wifi_power(0);
-
+#endif
     //waiting for usb disconnect
     while (auc_driver_probed == 1) {
         msleep(100);
     }
 
     /* 2.chip en on, usb probe */
+#ifndef UBUNTU_PT_MODE
     set_usb_wifi_power(1);
+#endif
 
     //waiting for usb probe
     while (auc_driver_probed == 0) {
@@ -1484,7 +1489,9 @@ void aml_usb_exit(void)
     vm_cfg80211_clear_parent_dev();
 
     hal_ops_detach();
+#ifndef UBUNTU_PT_MODE
     set_usb_wifi_power(0);
+#endif
 #ifdef DRV_PT_SUPPORT
     b2b_tx_thread_remove();
 #endif

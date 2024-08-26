@@ -1,1 +1,1 @@
-#define DRIVERVERSION    "v1.1.6_20240712-w1u-r driver:bf96ef8ae30663420329+447764+438286"
+#define DRIVERVERSION    "v1.2.0_20240827-w1u-r pre driver:4e6f9dfba5f67320ffe2b9c71d81567e334d06c5"
