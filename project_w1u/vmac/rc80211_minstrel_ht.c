@@ -149,7 +149,7 @@ minstrel_ht_get_stats(struct minstrel_priv *mp, struct minstrel_ht_sta *mi,
         if (!(mi->supported[group] & BIT(idx)))
             idx += 4;
     }
-
+    
     //group = 13;//vht20
     //group = 19;//vht40
     //group = 25;//vht80
@@ -523,7 +523,7 @@ minstrel_ht_update_stats(struct minstrel_priv *mp, struct minstrel_ht_sta *mi)
                         : minstrel_mcs_groups[group].flags & IEEE80211_TX_RC_40_MHZ_WIDTH ? (1 << BW_40) : (1 << BW_20);
                 }
 
-                AML_PRINT(AML_LOG_ID_RATE_CTR,AML_LOG_LEVEL_DEBUG, "group=%d,rate idx =%d, success=%4d,attempts=%4d, succ_hist=%6d, att_hist=%7d,%3d%%, prob_ewma=%4d,tp_avg=%3d,duration=%d\n",
+                AML_PRINT(AML_LOH_ID_RATE_CTR,AML_LOG_LEVEL_DEBUG, "group=%d,rate idx =%d, success=%4d,attempts=%4d, succ_hist=%6d, att_hist=%7d,%3d%%, prob_ewma=%4d,tp_avg=%3d,duration=%d\n",
                      group, i, mrs->last_success, mrs->last_attempts, mrs->succ_hist,mrs->att_hist,mrs->succ_hist*100/mrs->att_hist, mrs->prob_ewma, mrs->tp_avg, minstrel_mcs_groups[group].duration[i]);
             }
         }
@@ -534,13 +534,22 @@ minstrel_ht_update_stats(struct minstrel_priv *mp, struct minstrel_ht_sta *mi)
     /* Assign new rate set per sta */
     minstrel_ht_assign_best_tp_rates(mi, tmp_mcs_tp_rate, tmp_cck_tp_rate);
     memcpy(mi->max_tp_rate, tmp_mcs_tp_rate, sizeof(mi->max_tp_rate));
-    AML_PRINT(AML_LOG_ID_RATE_CTR,AML_LOG_LEVEL_DEBUG, " best_tp:%d, max_tp_rate:%d:%d:%d:%d\n", mi->max_prob_rate,
+    AML_PRINT(AML_LOH_ID_RATE_CTR,AML_LOG_LEVEL_DEBUG, " best_tp:%d, max_tp_rate:%d:%d:%d:%d\n", mi->max_prob_rate,
         mi->max_tp_rate[0], mi->max_tp_rate[1], mi->max_tp_rate[2], mi->max_tp_rate[3]);
     /* Try to increase robustness of max_prob_rate*/
     minstrel_ht_prob_rate_reduce_streams(mi);
 
     /* try to sample all available rates during each interval */
     mi->sample_count *= 10;
+
+#ifdef CONFIG_MAC80211_DEBUGFS
+    /* use fixed index if set */
+    if (mp->fixed_rate_idx != -1) {
+        for (i = 0; i < 4; i++)
+            mi->max_tp_rate[i] = mp->fixed_rate_idx;
+        mi->max_prob_rate = mp->fixed_rate_idx;
+    }
+#endif
 
     /* Reset update timer */
     mi->last_stats_update = jiffies;
@@ -912,7 +921,7 @@ static int minstrel_check_sample_idx(int tp_rate1_grp, int tp_rate1_idx, unsigne
     struct minstrel_rate_stats *mrs = &mg->rates[tp_rate1_idx];
     int tmp_prob_success = 50;
 
-    if (mrs->prob_ewma < MINSTREL_FRAC(40, 100) && tp_rate1_idx > 1 && mrs->attempts > 30
+    if(mrs->prob_ewma < MINSTREL_FRAC(40, 100) && tp_rate1_idx > 1 && mrs->attempts > 30 
         && tp_rate1_grp < 4) {
         mi->need_clear_rate_index = tp_rate1_idx - 1;
     }
@@ -993,7 +1002,7 @@ minstrel_get_sample_rate(struct minstrel_priv *mp, struct minstrel_ht_sta *mi, s
         mcs_idx = tp_rate1_idx + (tp_rate1 % 2) + 1;
         sample_idx = mcs_idx + sample_group * MCS_GROUP_RATES;
     }
-    AML_PRINT(AML_LOG_ID_RATE_CTR,AML_LOG_LEVEL_DEBUG, "tp_rate1:%d, sample_idx:%d\n", tp_rate1, sample_idx);
+    AML_PRINT(AML_LOH_ID_RATE_CTR,AML_LOG_LEVEL_DEBUG, "tp_rate1:%d, sample_idx:%d\n", tp_rate1, sample_idx);
 
     /*
     * Sampling might add some overhead (RTS, no aggregation)
@@ -1062,6 +1071,10 @@ minstrel_ht_get_rate(void *priv, struct ieee80211_sta_aml *sta, void *priv_sta,
 
     info->flags |= mi->tx_flags;
 
+#ifdef CONFIG_MAC80211_DEBUGFS
+    if (mp->fixed_rate_idx != -1)
+        return;
+#endif
 
     /* Don't use EAPOL frames for sampling on non-mrr hw */
     if (!((mp->hw->max_rates == 1) && (info->control.flags & IEEE80211_TX_CTRL_PORT_CTRL_PROTO))) {
@@ -1219,7 +1232,7 @@ minstrel_ht_update_caps(void *priv, struct ieee80211_supported_band *sband,
 			continue;
 
 		if (gflags & IEEE80211_TX_RC_80_MHZ_WIDTH) {
-			if (((gflags & IEEE80211_TX_RC_SHORT_GI) &&
+			if (((gflags & IEEE80211_TX_RC_SHORT_GI) && 
 				!(vht_cap->cap & IEEE80211_VHT_CAP_SHORT_GI_80))
 				 || sta->bandwidth < IEEE80211_STA_RX_BW_80) {
 				continue;
@@ -1372,6 +1385,10 @@ static  struct minstrel_rate_control_ops mac80211_minstrel_ht = {
 	.free_sta = minstrel_ht_free_sta,
 	.alloc = minstrel_ht_alloc,
 	.free = minstrel_ht_free,
+#ifdef CONFIG_MAC80211_DEBUGFS
+	.add_sta_debugfs = minstrel_ht_add_sta_debugfs,
+	.remove_sta_debugfs = minstrel_ht_remove_sta_debugfs,
+#endif
 	.get_expected_throughput = minstrel_ht_get_expected_throughput,
 };
 

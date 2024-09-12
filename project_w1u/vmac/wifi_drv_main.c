@@ -189,17 +189,11 @@ static void rf_test_mode_recover(struct drv_private *drv_priv)
 
 void aml_w1_fw_recovery(void *drv_priv)
 {
-    struct drv_private *p_drv_priv = (struct drv_private *)drv_priv;
-
     if (aml_wifi_is_enable_rf_test()) {
-        rf_test_mode_recover(p_drv_priv);
+        rf_test_mode_recover((struct drv_private *)drv_priv);
     }
     aml_disable_wifi();
     aml_enable_wifi();
-
-    if (p_drv_priv->hal_priv->hal_fw_log_flag) {
-        hal_set_fwlog_cmd(FWLOG_AON_PIN_MUX_ENABLE);
-    }
 }
 
 static void drv_scan_start_ex( SYS_TYPE param1,SYS_TYPE param2,
@@ -1269,7 +1263,7 @@ drv_set_country(struct drv_private * drv_priv, char *isoName)
 
     tmpi = find_country_code((unsigned char *)isoName);
     if (tmpi == 0xff) {
-        AML_PRINT_LOG_INFO("can't find country code \n");
+//        AML_PRINT_LOG_INFO("can't find country code \n");
         tmpi = 0;
     }
 
@@ -1544,9 +1538,9 @@ void aml_interface_shutdown_init(void)
 int aml_drv_attach( struct drv_private *drv_priv, struct wifi_mac* wmac)
 {
     int i ;
-    //int error;
+    int error;
     char *country_code = NULL;
-    int country_index = DEFAULT_COUNTRY;
+    int country_index = DEFAULT_CONTRY;
 
     AML_PRINT_LOG_INFO("enter Here\n");
 
@@ -1573,12 +1567,18 @@ int aml_drv_attach( struct drv_private *drv_priv, struct wifi_mac* wmac)
     driv_ps_wakeup(drv_priv);
 
     country_code = aml_wifi_get_country_code();
+
     AML_PRINT_LOG_INFO("<running> insmod country: %s\n", country_code);
 
     country_index = find_country_code((unsigned char *)country_code);
-    drv_priv->drv_config.cfg_countrycode = country_index == 0xff ? DEFAULT_COUNTRY : country_index;
-    drv_priv->drv_config.cfg_txpoweplan = 0xff;
+    if (country_index != 0xff) {
+        drv_priv->drv_config.cfg_countrycode = country_index;
 
+    } else {
+        drv_priv->drv_config.cfg_countrycode = 0;
+    }
+
+    drv_priv->drv_config.cfg_txpoweplan     = wifimac_get_tx_pwr_plan(drv_priv->drv_config.cfg_countrycode);
     drv_priv->drv_config.cfg_ampduackpolicy     = DEFAULT_AMPDUACKPOLICY;
     drv_priv->drv_config.cfg_htsupport      = DEFAULT_HT_ENABLE;
     drv_priv->drv_config.cfg_vhtsupport      = DEFAULT_VHT_ENABLE;
@@ -1656,15 +1656,16 @@ int aml_drv_attach( struct drv_private *drv_priv, struct wifi_mac* wmac)
      * The MAC has multi-rate retry support.
      */
     drv_priv->drv_ratectrl_mrr = 1;
-/*    error = drv_channel_init(drv_priv, drv_priv->drv_config.cfg_countrycode);
+    error = drv_channel_init(drv_priv, drv_priv->drv_config.cfg_countrycode);
     if (error != 0)
     {
         driv_ps_sleep(drv_priv);
          AML_PRINT_LOG_ERR("<running> error!!!\n");
         goto bad;
     }
+
     wifi_mac_set_tx_power_coefficient(drv_priv, NULL, drv_priv->drv_config.cfg_txpoweplan);
-*/
+
     drv_priv->net_ops->wifi_mac_rate_ratmod_attach(drv_priv);
     AML_PRINT_LOG_INFO("<running> drv_priv->drv_ratectrl_size = %d\n",
         drv_priv->drv_ratectrl_size);
@@ -1690,10 +1691,9 @@ int aml_drv_attach( struct drv_private *drv_priv, struct wifi_mac* wmac)
     AML_PRINT_LOG_INFO("drv_agg_limit:%d, hal_max_mpdu_num:%d\n", drv_priv->drv_agg_limit, drv_priv->hal_priv->hal_max_mpdu_num);
 
     return 0;
-/*
+
 bad:
     return -ENODEV;
-*/
 }
 
 void aml_drv_detach( struct drv_private * drv_priv)
@@ -1924,7 +1924,7 @@ void p2p_noa_start_irq (struct wifi_mac_p2p *p2p, struct drv_private *drv_priv)
                 wifi_mac_restore_wnet_vif_channel(p2p_vmac);
         }
 #endif
-
+        drv_hal_tx_frm_pause(drv_priv, 1);
         if (drv_priv->net_ops->wifi_mac_pwrsave_is_wnet_vif_fullsleep(wnet_vif) != 0)
         {
             drv_priv->net_ops->wifi_mac_pwrsave_fullsleep(wnet_vif, SLEEP_AFTER_NOA_START);
@@ -1933,7 +1933,7 @@ void p2p_noa_start_irq (struct wifi_mac_p2p *p2p, struct drv_private *drv_priv)
     else
     {
         /* if noa end */
-        AML_PRINT(AML_LOG_ID_P2P,AML_LOG_LEVEL_DEBUG, "noa end HiP2pNoaCountNow=%d\n",HiP2pNoaCountNow);
+        AML_PRINT(AML_LOG_ID_PWR_SAVE,AML_LOG_LEVEL_DEBUG, "noa end HiP2pNoaCountNow=%d\n",HiP2pNoaCountNow);
 
         wnet_vif->vm_pstxqueue_flags &= (~WIFINET_PSQUEUE_NOA);
 
@@ -1955,7 +1955,7 @@ void p2p_noa_start_irq (struct wifi_mac_p2p *p2p, struct drv_private *drv_priv)
                     wifi_mac_restore_wnet_vif_channel(main_vmac);
             }
 #endif
-
+            drv_hal_tx_frm_pause(drv_priv, 0);
 
             if (drv_priv->net_ops->wifi_mac_pwrsave_is_sta_sleeping(wnet_vif) == 0)
             {

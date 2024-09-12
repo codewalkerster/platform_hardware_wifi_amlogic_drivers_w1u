@@ -146,7 +146,7 @@ int wifi_mac_input(void *station, struct sk_buff *skb, struct wifi_mac_rx_status
     KASSERT(sta != NULL, ("null nsta"));
     sta->sta_inact = sta->sta_inact_reload;
     sta->sta_inact_time = jiffies;
-    //dump_memory_internal(os_skb_data(skb), os_skb_get_pktlen(skb));
+    //dump_memory_internel(os_skb_data(skb), os_skb_get_pktlen(skb));
     KASSERT(os_skb_get_pktlen(skb) >= sizeof(struct wifi_mac_frame_min),
             ("frame length too short: %u", os_skb_get_pktlen(skb)));
 
@@ -3341,7 +3341,7 @@ void wifi_mac_recv_beacon(struct wlan_net_vif *wnet_vif,
                                 wnet_vif->vm_bcn_intval, real_bcn_interval, ratio_recv_bcn, wnet_vif->vm_pwrsave.ips_sta_psmode, *((unsigned short *)&wh->i_seq[0]) >> 4);
             }
 
-            if (scan.tim && (wnet_vif->vm_pwrsave.ips_sta_psmode > WIFINET_PWRSAVE_NONE))
+            if (scan.tim && wnet_vif->vm_pwrsave.ips_sta_psmode > WIFINET_PWRSAVE_NONE)
             {
                 struct wifi_mac_tim_ie *tim = (struct wifi_mac_tim_ie *) scan.tim;
                 if (tim->tim_count == 0)
@@ -4136,7 +4136,7 @@ void wifi_mac_recv_assoc_req(struct wlan_net_vif *wnet_vif,
                     {
                         AML_PRINT_LOG_INFO("ASSOC_REQ is waioui \n");
                         wai = frm;
-                        dump_memory_internal(wai, wai[1]+2);
+                        dump_memory_internel(wai, wai[1]+2);
                     }
 #endif //#ifdef CONFIG_WAPI
                     break;
@@ -4147,7 +4147,7 @@ void wifi_mac_recv_assoc_req(struct wlan_net_vif *wnet_vif,
                 case WIFINET_ELEMID_WAI:
                     wai = frm;
                     AML_PRINT_LOG_INFO("ASSOC_REQ is WIFINET_ELEMID_WAI \n");
-                    dump_memory_internal(wai, wai[1]+2);
+                    dump_memory_internel(wai, wai[1]+2);
                     break;
 
 #endif //#ifdef CONFIG_WAPI

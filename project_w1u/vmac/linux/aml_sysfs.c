@@ -924,9 +924,47 @@ static DEVICE_ATTR(cca_thrd_cfg, S_IWUSR|S_IWGRP|S_IRUGO, show_cca_thrd_cfg, sto
 
 static ssize_t rate_statics_show(struct device *d, struct device_attribute *attr, char *buf)
 {
+    unsigned char tmp_buf_bw[10];
+    unsigned char tmp_buf_gi[10];
+    unsigned char tmp_buf_rate[10];
     struct wlan_net_vif *wnet_vif = g_wnet_vif0;
+    struct drv_private *drv_priv = drv_get_drv_priv();
+    struct hw_interface* hif = hif_get_hw_interface();
 
-    return aml_get_rvr_info(wnet_vif, buf, WRITE_FILE_NODE);
+    if (!wnet_vif) {
+        AML_PRINT_LOG_ERR("wnet_vif is null!\n");
+        return -EFAULT;
+    }
+
+    if (wnet_vif->vm_state != WIFINET_S_CONNECTED) {
+        AML_PRINT_LOG_ERR("vm_state is not in connection!\n");
+        return -EFAULT;
+    }
+
+    if (wnet_vif->vm_mainsta == NULL) {
+        AML_PRINT_LOG_ERR("vm_mainsta is null!\n");
+        return -EFAULT;
+    }
+
+    sprintf(buf, "sta_avg_rssi:%d, sta_avg_bcn_rssi:%d, avg_snr:%d, ",
+            wnet_vif->vm_mainsta->sta_avg_rssi - 256,
+            wnet_vif->vm_mainsta->sta_avg_bcn_rssi,
+            wnet_vif->vm_mainsta->sta_avg_snr);
+
+    aml_get_rate_idx(wnet_vif->vm_mainsta->sta_vendor_rate_code, tmp_buf_rate);
+    aml_get_rate_bw(wnet_vif->vm_mainsta->sta_vendor_bw, tmp_buf_bw);
+    aml_get_rate_gi(wnet_vif->vm_mainsta->sta_vendor_gi, tmp_buf_gi);
+    sprintf(buf + strlen(buf), "txRate:%s, tx_bw:%s, tx_gi:%s, gbpps:%d, ",tmp_buf_rate, tmp_buf_bw, tmp_buf_gi, hif->HiStatus.avg_tx_fail_num);
+
+    memset(tmp_buf_rate, 0, sizeof(tmp_buf_rate));
+    memset(tmp_buf_bw, 0, sizeof(tmp_buf_bw));
+    memset(tmp_buf_gi, 0, sizeof(tmp_buf_gi));
+    aml_get_rate_idx(drv_priv->drv_currratetable->info[wnet_vif->vm_mainsta->sta_rxrate_index].vendor_rate_code, tmp_buf_rate);
+    aml_get_rate_bw(wnet_vif->vm_mainsta->last_rxrate_bw, tmp_buf_bw);
+    aml_get_rate_gi(wnet_vif->vm_mainsta->last_rxrate_gi, tmp_buf_gi);
+    sprintf(buf + strlen(buf), "rxRate:%s, rx_bw:%s, rx_gi:%s\n",tmp_buf_rate, tmp_buf_bw, tmp_buf_gi);
+
+    return strlen(buf);
 }
 
 static DEVICE_ATTR(rate_statics, S_IRUGO, rate_statics_show, NULL);

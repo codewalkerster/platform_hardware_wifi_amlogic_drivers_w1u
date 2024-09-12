@@ -12,7 +12,7 @@
 #define DEFAULT_TXAMPDU_SUB_MAX_FOR_HT        2
 #define DEFAULT_TXAMPDU_SUB_MAX_COEX_ESCO     4   /*BT have eSCO logic link, we max aggregation 4 subfram*/
 #define DEFAULT_TXAMPDU_SUB_MAX_COEX               6   /*WIFI max aggregation sub  when WIFI/BT coexist */
-#define DEFAULT_TXAMPDU_SUB_MAX              15
+#define DEFAULT_TXAMPDU_SUB_MAX              16
 #define DEFAULT_TXAMPDU_LEN_MAX             (1538 * 20)//max
 
 #define DEFAULT_BLOCKACK_BITMAPSIZE         64
@@ -40,7 +40,7 @@
 #define DEFAULT_TXPOWER                     11
 #define DEFAULT_MCAST_EAPOL_NULLDATA_RATE_11N                      6500        /* Kbps */
 #define DEFAULT_MCAST_EAPOL_NULLDATA_RATE_11G                      1000        /* Kbps */
-#define DEFAULT_COUNTRY                      0
+#define DEFAULT_CONTRY                      0
 #define DEFAULT_CACHESIZE                   32
 #define DEFAULT_DSSUPPORT                   1
 #define DEFAULT_WMMSUPPORT                  1
@@ -72,12 +72,9 @@
 
 #define DEFAULT_TXAMPDU_EN              1   //default  support Aggr tx : Legacy & capture mode: AMPDU=0;
 #define DEFAULT_RXAMPDU_EN              1    //default  support Aggr rx : Legacy & capture mode: AMPDU=0;
-
-#ifdef UBUNTU_PT_MODE
-#define DEFAULT_SUPPORT_RECOVERY        0
-#else
 #define DEFAULT_SUPPORT_RECOVERY        1
-#endif
+
+
 
 #define SRAM_16KMODE 0  // 0: normal ; 1: capture
 /*

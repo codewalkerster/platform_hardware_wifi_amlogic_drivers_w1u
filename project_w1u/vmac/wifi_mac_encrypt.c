@@ -63,7 +63,7 @@ int wifi_mac_security_req(struct wlan_net_vif *wnet_vif, int cipher, int flags, 
         return 0;
     }
 
-    WIFINET_DPRINTF(AML_LOG_ID_LOG, AML_LOG_LEVEL_DEBUG, "kid:%d, cipher:%d, wk_flags:0x%x, flags:0x%x, new:%s, old:%s\n",
+    WIFINET_DPRINTF(AML_LOG_ID_LOG, AML_LOG_LEVEL_DEBUG,, "kid:%d, cipher:%d, wk_flags:0x%x, flags:0x%x, new:%s, old:%s\n",
                     key->wk_keyix, cipher, key->wk_flags, flags, cip->wm_name, key->wk_cipher->wm_name);
 
     oflags = key->wk_flags;
@@ -567,7 +567,7 @@ tkip_demic(struct wifi_mac_key *k, struct sk_buff *skb0, int hdrlen, int force)
 
         wnet_vif->vif_sts.sts_rx_tkip_sw_mic_err++;
         // AML_PRINT_LOG_INFO("<running> \n");
-        //dump_memory_internal(k->wk_key, WIFINET_KEYBUF_SIZE+WIFINET_MICBUF_SIZE);
+        //dump_memory_internel(k->wk_key, WIFINET_KEYBUF_SIZE+WIFINET_MICBUF_SIZE);
         michael_mic(k->wk_rxmic,
                     skb0, hdrlen, pktlen - (hdrlen + k->wk_cipher->wm_miclen),
                     mic);

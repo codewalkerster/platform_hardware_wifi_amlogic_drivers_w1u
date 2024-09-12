@@ -70,7 +70,7 @@
 #define KEY_ENTRY_READ_CMD 0x51
 #define GET_QUEUE_DEBUG_INFO_CMD (CMD_GET | 0x52)
 #define TXT_SHIFT_CFG_CMD 0x53
-#define SCAN_SCH_START_CMD 0x54
+
 /*coexist cmd1 comand*/
 #define COEXIST_EN_CMD  BIT(0)
 #define COEXIST_MAX_MISS_BCN_CNT  BIT(1)
@@ -514,97 +514,11 @@ typedef struct Channel_Switch
     unsigned char flag;
     unsigned char bw;
     unsigned char rssi;
-    unsigned char duration;
-    unsigned char res[2];
+    unsigned char res[3];
     unsigned int channel;
     /* center freq value */
     unsigned int pri_chan;
 }Channel_Switch;
-struct scanu_sched_plan
-{
-    //Interval between scheduled scan iterations. In seconds.
-    unsigned int interval;
-    //number of scan iterations in this scan plan. Zero means infinite loop.
-    unsigned int iterations;
-};
-
-
-struct mac_addr
-{
-    /// Array of 16-bit words that make up the MAC address.
-    unsigned short array[6/2];
-};
-
-/// Primary Channel definition
-struct mac_chan_def
-{
-    /// Frequency of the channel (in MHz)
-    unsigned short freq;
-    /// RF band (@ref mac_chan_band)
-    unsigned char band;
-    /// Additional information (@ref mac_chan_flags)
-    unsigned char flags;
-    /// Max transmit power allowed on this channel (dBm)
-    unsigned char tx_power;
-};
-
-/// SSID.
-struct mac_ssid
-{
-    /// Actual length of the SSID.
-    unsigned char length;
-    /// Array containing the SSID name.
-    unsigned char array[32];
-};
-
-#define SCAN_SSID_MAX   2
-#define AML_2G_CHANNELS_NUM 14
-#define AML_5G_CHANNELS_NUM 25
-
-struct scanu_start_req
-{
-    struct mac_chan_def chan[AML_2G_CHANNELS_NUM + AML_5G_CHANNELS_NUM];
-    struct mac_ssid ssid[SCAN_SSID_MAX];
-    struct mac_addr bssid;
-    uint32_t add_ies;
-    unsigned short add_ie_len;
-    unsigned char vif_idx;
-    unsigned char chan_cnt;
-    unsigned char ssid_cnt;
-    unsigned int duration;
-};
-
-#define MAX_SCHED_SCAN_PLANS 2
-#define MAX_MATCH_COUNT 2
-struct scanu_macth_set
-{
-  struct mac_ssid ssId;
-  unsigned char bssid[6];
-  unsigned char    rssiThreshold;
-  unsigned char per_band_rssi_thold[3];
-};
-
-typedef struct sched_scan_param
-{
-    struct scanu_start_req scanu_req;
-    unsigned char match_count;
-    struct scanu_macth_set match_sets[MAX_MATCH_COUNT];
-    unsigned char min_rssi_thold;
-    unsigned int delay;
-    struct scanu_sched_plan scan_plans[MAX_SCHED_SCAN_PLANS];
-    unsigned char n_scan_plans;
-    unsigned char resv[3];
-}sched_scan_ptr;
-
-
-typedef struct sched_scan
-{
-    unsigned char Cmd;
-    unsigned char enable;
-    unsigned char vid;
-    unsigned long long reqid;
-    sched_scan_ptr * sched_param;
-}sched_scan_cmd;
 
 typedef struct DPD_Memory_Download
 {

@@ -396,10 +396,9 @@ int wifi_mac_ant_rssi_measure(void *arg);
 
 int wifi_mac_recovery_record_vif(struct wlan_net_vif * wnet_vif);
 void wifi_mac_recovery_host_reset(struct wifi_mac * wifimac);
-int wifi_mac_vif_restore_end(struct wlan_net_vif *wnet_vif);
+void wifi_mac_vif_restore_end(struct wlan_net_vif *wnet_vif);
 void wifi_mac_recovery_host_restore(struct wifi_mac * wifimac);
 void wifi_mac_process_recovery(struct wifi_mac * wifimac);
-void wifi_mac_mkey_restore_task(SYS_TYPE param1,SYS_TYPE param2, SYS_TYPE param3,SYS_TYPE param4,SYS_TYPE param5);
 
 void wifi_mac_connect_repair_task(SYS_TYPE param1,SYS_TYPE param2, SYS_TYPE param3,SYS_TYPE param4,SYS_TYPE param5);
 int aml_request_recovery(enum wifi_mac_recovery_source src);

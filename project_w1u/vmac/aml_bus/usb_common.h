@@ -7,7 +7,7 @@
 #include <linux/slab.h>
 #include <linux/kernel.h>
 
-#ifdef CONFIG_USB
+#ifndef CONFIG_USB_CLOSE
 #define OS_LOCK spinlock_t
 
 #define USB_MAXSG_SIZE 32

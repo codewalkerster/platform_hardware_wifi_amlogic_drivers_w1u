@@ -694,7 +694,7 @@ wifi_mac_mgmt_output(struct wifi_station *sta, struct sk_buff *skb, int type)
 }
 
 static void
-wifi_mac_mgmt_probe_resp_output(struct wifi_station *sta,
+wifi_mac_mgmt_probe_resp_output(struct wifi_station *sta, 
     struct sk_buff *skb, unsigned char *macaddr)
 {
     struct wlan_net_vif *wnet_vif = sta->sta_wnet_vif;
@@ -2617,10 +2617,6 @@ int wifi_mac_send_probe_rsp(struct wlan_net_vif  *wnet_vif,
         frm = wifi_mac_add_ssid(frm, wnet_vif->vm_mainsta->sta_essid, wnet_vif->vm_mainsta->sta_esslen);
     }
 
-    if (wnet_vif->vm_sae_h2e_only == 1) {
-        rs.dot11_rate[rs.dot11_rate_num++] = WIFINET_SAE_H2E_ONLY;
-    }
-
     //p2p not support 11b rate
 #ifdef CONFIG_P2P
     if (wnet_vif->vm_p2p->p2p_enable)
@@ -2630,6 +2626,10 @@ int wifi_mac_send_probe_rsp(struct wlan_net_vif  *wnet_vif,
     }
     else
 #endif//CONFIG_P2P
+    if (wnet_vif->vm_sae_h2e_only == 1) {
+        rs.dot11_rate[rs.dot11_rate_num++] = WIFINET_SAE_H2E_ONLY;
+    }
+
     {
         frm = wifi_mac_add_rates(frm, &rs);
         frm = wifi_mac_add_xrates(frm, &rs);
@@ -2654,10 +2654,6 @@ int wifi_mac_send_probe_rsp(struct wlan_net_vif  *wnet_vif,
     if ((wifimac->wm_flags & WIFINET_F_DOTH) ||
         (wifimac->wm_flags_ext & WIFINET_FEXT_COUNTRYIE))
     {
-        if (wifimac->wm_countryinfo.country_len == 0) {
-            WIFINET_DPRINTF(AML_LOG_ID_XMIT, AML_LOG_LEVEL_INFO, "country ie should init");
-            wifi_mac_build_country_ie(wnet_vif);
-        }
         frm = wifi_mac_add_country(frm, wifimac);
     }
 
@@ -2738,8 +2734,7 @@ int wifi_mac_send_probe_rsp(struct wlan_net_vif  *wnet_vif,
     if(wifi_mac_is_vht_enable(wnet_vif))
     {
         frm = wifi_mac_add_vht_cap(frm, sta);
-        if (!wnet_vif->vm_p2p_support || (wnet_vif->vm_p2p_support && wnet_vif->vm_curchan != NULL))
-            frm = wifi_mac_add_vht_opt(frm, sta, WIFINET_FC0_SUBTYPE_PROBE_RESP);
+        frm = wifi_mac_add_vht_opt(frm, sta, WIFINET_FC0_SUBTYPE_PROBE_RESP);
         //frm = wifi_mac_add_vht_txpw(frm, sta);
         //frm = wifi_mac_add_vht_ch_sw_wrp(frm, sta);
 
@@ -3502,7 +3497,7 @@ int wifi_mac_send_actionframe(struct wlan_net_vif *wnet_vif, struct wifi_station
 
                         wifi_mac_addba_rsp_setup(sta, tid_index);
                         *(unsigned short *)&addbaresponse->rs_baparamset = htole16(*(unsigned short *)&baparamset);
-                        //dump_memory_internal(&baparamset,sizeof(struct wifi_mac_ba_parameterset));
+                        //dump_memory_internel(&baparamset,sizeof(struct wifi_mac_ba_parameterset));
                         addbaresponse->rs_batimeout = htole16(batimeout);
                         addbaresponse->rs_statuscode = htole16(statuscode);
 

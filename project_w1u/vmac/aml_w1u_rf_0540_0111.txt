@@ -44,14 +44,6 @@ digital_code_gain_limit=1,0x0,0xff,0x0,0xff
 #pwr_band5_5660=14
 #pwr_band5_5780=14
 
-#txt_shift_value for board gap 70~140
-txt_shift_value_2442=100
-txt_shift_value_5200=100
-txt_shift_value_5300=100
-txt_shift_value_5530=100
-txt_shift_value_5660=100
-txt_shift_value_5780=100
-
 #wifi 2g/5g tx power table
 wftx_pwrtbl_en=1
 ##0:11b(1,2) 1: 11b(5.5,11) 2:11a/g(6~12) 3:11a/g(18~36) 4:11a/g(48) 5:11a/g(54)

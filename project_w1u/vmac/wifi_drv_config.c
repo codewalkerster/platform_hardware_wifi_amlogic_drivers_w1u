@@ -430,12 +430,8 @@ int drv_cfg_load_from_file(void)
         filp_close(fp, NULL);
         goto err;
     }
-#ifdef UBUNTU_PT_MODE
-    if (kernel_read(fp, content, size, &fp->f_pos) != size)
-#else
-    if (vfs_read(fp, content, size, &fp->f_pos) != size)
-#endif
-    {
+
+    if (vfs_read(fp, content, size, &fp->f_pos) != size) {
 #else
     if (kernel_read(fp, content, size, &fp->f_pos) != size) {
 #endif

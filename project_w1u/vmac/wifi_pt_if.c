@@ -72,8 +72,8 @@ void Driver_mic_error_event(void *drv_priv,
     DBG_HAL_THR_EXIT();
 }
 
-void Driver_intr_rx_handle(void *drv_prv,struct sk_buff *skb,unsigned long long PN, unsigned char encrypt, unsigned char Rssi,unsigned char RxRate,
-        unsigned char channel,  unsigned char aggr, unsigned char wnet_vif_id,unsigned char keyid, unsigned int channel_bw, unsigned int rx_sgi)
+void Driver_intr_rx_handle(void *drv_prv,struct sk_buff *skb, unsigned char Rssi, unsigned char RxRate,
+        unsigned char channel, unsigned char aggr, unsigned char wnet_vif_id,unsigned char keyid, unsigned int channel_bw, unsigned int rx_sgi)
 {
     recv_frame_num++;
 

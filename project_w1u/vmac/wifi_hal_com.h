@@ -376,8 +376,7 @@ struct  hal_work_task
 #define ICCM_ROM_LEN    (128 * 1024)
 #define ICCM_RAM_LEN    (64 * 1024)
 #define DCCM_LEN        (48 * 1024)
-#define EXT_RAM_LEN     (16 * 1024)
-#define SRAM_LEN        (16 * 1024)
+#define SRAM_LEN        (32 * 1024)
 #define ICCM_ALL_LEN    (ICCM_ROM_LEN + ICCM_RAM_LEN)
 
 // for check
@@ -982,7 +981,6 @@ struct hal_layer_ops
 
     struct OS_TQ_STRUCT hi_tasktq;      /* hi intr tasklet */
     OS_MUTEX hal_phy_mutex;
-    OS_MUTEX hal_spec_mutex;
     OS_MUTEX power_mutex;
     OS_MUTEX usb_mutex;
 
@@ -1037,7 +1035,7 @@ struct hal_layer_ops
     unsigned char hal_max_mpdu_num;
     unsigned char dpd_process_flag;
     bool g_get_fw_log;
-    unsigned char hal_fw_log_flag;
+
 };
 
 /*** aml platform***/

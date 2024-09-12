@@ -34,11 +34,10 @@ moduleTraceInfo gAmlTraceInfo[ AML_LOG_ID_MAX ] =
     [AML_LOG_ID_PWR_SAVE]      = { AML_LOG_LEVEL_DEFAULT, "PS"   },
     [AML_LOG_ID_WME]           = { AML_LOG_LEVEL_DEFAULT, "WME"  },
     [AML_LOG_ID_DOTH]          = { AML_LOG_LEVEL_DEFAULT, "11H"  },
-    [AML_LOG_ID_RATE_CTR]      = { AML_LOG_LEVEL_DEFAULT, "RCTR" },
+    [AML_LOH_ID_RATE_CTR]      = { AML_LOG_LEVEL_DEFAULT, "RCTR" },
     [AML_LOG_ID_TX_MSDU]       = { AML_LOG_LEVEL_DEFAULT, "MSDU" },
-    [AML_LOG_ID_HAL_TX]        = { AML_LOG_LEVEL_DEFAULT, "HLT"  },
+    [AML_LOG_ID_HAL_TX]        = { AML_LOG_LEVEL_DEFAULT, "HTX"  },
     [AML_LOG_ID_FILTER]        = { AML_LOG_LEVEL_DEFAULT, "FIL"  },
-    [AML_LOG_ID_TX_REC]        = { AML_LOG_LEVEL_DEFAULT, "REC"  },
 
 };
 
@@ -120,7 +119,7 @@ void IPv4_address_print( unsigned char* address )
     PUTC('\n');
 }
 
-  void dump_memory_internal(unsigned char *data,int len)
+  void dump_memory_internel(unsigned char *data,int len)
 {
 
     unsigned char *cursor=data;
@@ -266,9 +265,10 @@ void WRITE_16B( unsigned char* address, unsigned short value )
 }
 
 
-void ie_dbg(unsigned char *ie )
+void ie_dbg(unsigned char *ie ) 
 {
     int i = 0;
+   
     AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_DEBUG, "ie \n");
     for(i = 0; i < ie[1] + 2; i++)
     {
@@ -276,31 +276,5 @@ void ie_dbg(unsigned char *ie )
     }
 }
 
-void wifi_debug_dump_data(unsigned char* data, unsigned int size, unsigned char bytes_per_line)
-{
-    unsigned char line_data[32 * 3 + 1];
-    unsigned int offset = 0;
-    unsigned int pos = 0;
-    unsigned char i;
 
-    if (bytes_per_line > 32)
-    {
-        printk("input_bytes_num:%d, not support", bytes_per_line);
-        return;
-    }
 
-    while (offset < size)
-    {
-        pos = 0;
-
-        for (i = 0; (i < bytes_per_line) && (offset + i) < size; i++)
-        {
-            pos += sprintf(&line_data[pos], "%02X ", data[offset + i]);
-        }
-
-        line_data[pos - 1] = '\n';
-        line_data[pos] = '\0';
-        offset += bytes_per_line;
-        printk("%s", line_data);
-    }
-}

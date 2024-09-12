@@ -27,7 +27,7 @@ void drv_hal_attach( void *   drv_priv,void *cbptr)
 
     hal_priv->dhcp_offload = dhcp_offload;
     hal_priv->hal_ops.hal_init(drv_priv);
-    drv_hal_workitem_initial();
+    drv_hal_workitem_inital();
     return ;
 }
 
@@ -431,7 +431,7 @@ int drv_hal_add_workitem(WorkHandler task, WorkHandler taskcallback, SYS_TYPE pa
     return 0;
 }
 
-int drv_hal_workitem_initial(void)
+int drv_hal_workitem_inital(void)
 {
     struct hal_private* hal_priv = hal_get_priv();
     int res;

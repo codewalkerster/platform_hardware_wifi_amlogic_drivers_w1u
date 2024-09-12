@@ -13,6 +13,8 @@ struct udp_info aml_udp_info[32];
 int udp_cnt = 0;
 struct udp_timer aml_udp_timer;
 extern struct _B2B_Test_Case_Packet gB2BTestCasePacket;
+extern unsigned char g_tx_power_change_disable;
+extern unsigned char g_initial_gain_change_disable;
 
 cmd_to_func_table_t cmd_to_func[] =
 {
@@ -102,7 +104,7 @@ cmd_to_func_table_t cmd_to_func[] =
 };
 
 //Returns a char * arr [] and size is the length of the returned array
-char **aml_cmd_char_parse(char sep, const char *str, int *size)
+char **aml_cmd_char_phrase(char sep, const char *str, int *size)
 {
     int count = 0;
     int i;
@@ -160,7 +162,7 @@ int aml_set_chip_id(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int i,cmd_arg;
     char sep = ' ';
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg) {
         for (i = 0; i < 32; i++) {
             if (simple_strtoul(arg[2],NULL,16) & (1 << i)) {
@@ -189,7 +191,7 @@ int aml_get_chip_id(struct wlan_net_vif *wnet_vif, char* buf, int len)
     unsigned int efuse_data_l = 0;
     unsigned int efuse_data_h = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg) {
         efuse_data_l = efuse_manual_read(simple_strtoul(arg[1],NULL,16));
         efuse_data_h = efuse_manual_read(simple_strtoul(arg[2],NULL,16));
@@ -208,7 +210,7 @@ int aml_wpa_set_efuse(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int i,cmd_arg;
     char sep = ' ';
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg) {
         if (arg[1] && arg[2]) {
             for (i = 0; i < 32; i++) {
@@ -235,7 +237,7 @@ int aml_wpa_get_efuse(struct wlan_net_vif *wnet_vif, char* buf, int len)
     char sep = ' ';
     unsigned int efuse_data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg) {
         if (arg[1]) {
             efuse_data = efuse_manual_read(simple_strtoul(arg[1],NULL,16));
@@ -261,10 +263,10 @@ int aml_set_mac_addr(struct wlan_net_vif *wnet_vif, char* buf, int len)
     unsigned int efuse_data_l = 0;
     unsigned int efuse_data_h = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg) {
         sep = ':';
-        mac_cmd = aml_cmd_char_parse(sep, arg[1], &cmd_arg);
+        mac_cmd = aml_cmd_char_phrase(sep, arg[1], &cmd_arg);
         if (mac_cmd) {
             efuse_data_l = (simple_strtoul(mac_cmd[2],NULL,16) << 24) | (simple_strtoul(mac_cmd[3],NULL,16) << 16)
                            | (simple_strtoul(mac_cmd[4],NULL,16) << 8) | simple_strtoul(mac_cmd[5],NULL,16);
@@ -299,7 +301,7 @@ int aml_get_mac_addr(struct wlan_net_vif *wnet_vif, char* buf, int len)
     unsigned int efuse_data_l = 0;
     unsigned int efuse_data_h = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg) {
         efuse_data_l = efuse_manual_read(simple_strtoul(arg[1],NULL,16));
         efuse_data_h = efuse_manual_read(simple_strtoul(arg[2],NULL,16));
@@ -330,10 +332,10 @@ int aml_set_bt_device_id(struct wlan_net_vif *wnet_vif, char* buf, int len)
     unsigned int efuse_data_l = 0;
     unsigned int efuse_data_h = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg) {
         sep = ':';
-        mac_cmd = aml_cmd_char_parse(sep, arg[1], &cmd_arg);
+        mac_cmd = aml_cmd_char_phrase(sep, arg[1], &cmd_arg);
         if (mac_cmd) {
             efuse_data_h = (simple_strtoul(mac_cmd[0],NULL,16) << 24) | (simple_strtoul(mac_cmd[1],NULL,16) << 16)
                            | (simple_strtoul(mac_cmd[2],NULL,16) << 8) | simple_strtoul(mac_cmd[3],NULL,16);
@@ -370,7 +372,7 @@ int aml_get_bt_device_id(struct wlan_net_vif *wnet_vif, char* buf, int len)
     unsigned int efuse_data_l = 0;
     unsigned int efuse_data_h = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg) {
         efuse_data_l = efuse_manual_read(simple_strtoul(arg[1],NULL,16));
         efuse_data_h = efuse_manual_read(simple_strtoul(arg[2],NULL,16));
@@ -403,7 +405,7 @@ int aml_wpa_get_txaggr_status(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -428,7 +430,7 @@ int aml_get_drv_txaggr_status(struct wlan_net_vif *wnet_vif, char* buf, int len)
     unsigned int nframes;
     struct drv_private *drv_priv = drv_get_drv_priv();
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
 
     //get queue-0 statistics
     if (likely(!arg[1])) {
@@ -491,7 +493,7 @@ int aml_wmm_ac_addts(struct wlan_net_vif *wnet_vif, char* buf, int len)
     char sep = ' ';
     skip = strlen("wmm_ac_addts") + 1;
 
-    arg = aml_cmd_char_parse(sep, buf + skip, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf + skip, &cmd_arg);
     wifi_mac_send_wmm_ac_addts(arg);
 
     FREE(arg, "cmd_arg");
@@ -579,7 +581,7 @@ int aml_set_mac_amsdu(struct wlan_net_vif *wnet_vif, char* buf, int len)
     char sep = ' ';
     int cmd_arg;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
 
     aml_set_mac_amsdu_switch_state(arg[1]);
 
@@ -605,7 +607,7 @@ static struct wifi_channel * wifi_mac_find_chan_unlock( struct wifi_mac *wifimac
     return NULL;
 }
 
-void wifi_mac_set_country_regdom_task(SYS_TYPE param1, SYS_TYPE param2, SYS_TYPE param3, SYS_TYPE param4, SYS_TYPE param5)
+void wifi_mac_set_country_code_task(SYS_TYPE param1, SYS_TYPE param2, SYS_TYPE param3, SYS_TYPE param4, SYS_TYPE param5)
 {
     struct wifi_mac *wifimac = wifi_mac_get_mac_handle();
     struct drv_private* drv_priv = wifimac->drv_priv;
@@ -677,10 +679,10 @@ void wifi_mac_set_country_regdom_task(SYS_TYPE param1, SYS_TYPE param2, SYS_TYPE
     return;
 }
 
-void wifi_mac_set_country_regdom(char* arg)
+void wifi_mac_set_country_code(char* arg)
 {
     struct wifi_mac *wifimac = wifi_mac_get_mac_handle();
-    wifi_mac_add_work_task(wifimac, wifi_mac_set_country_regdom_task, NULL, arg[0], arg[1], 0, 0, 0);
+    wifi_mac_add_work_task(wifimac, wifi_mac_set_country_code_task, NULL, arg[0], arg[1], 0, 0, 0);
 }
 
 void wifi_mac_ap_set_11h(unsigned char channel)
@@ -754,7 +756,7 @@ int aml_set_drv_ampdu(struct wlan_net_vif *wnet_vif, char* buf, int len)
     char sep = ' ';
     int cmd_arg;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
 
     aml_set_drv_ampdu_switch_state(arg[1]);
 
@@ -771,7 +773,7 @@ int aml_update_wmm_arg(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int i = 0;
     struct wifi_mac_wme_state *wme = &wnet_vif->vm_wmac->wm_wme[wnet_vif->wnet_vif_id];
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
 
     if ((wme != NULL) && (arg[1] != NULL)) {
         ac = simple_strtoul(arg[1], NULL, 0);
@@ -780,7 +782,7 @@ int aml_update_wmm_arg(struct wlan_net_vif *wnet_vif, char* buf, int len)
 
             for (i = 2; i < cmd_arg; i++) {
                 sep = ':';
-                param = aml_cmd_char_parse(sep, arg[i], &cmd_param);
+                param = aml_cmd_char_phrase(sep, arg[i], &cmd_param);
                 if (strnicmp(arg[i], "acm", strlen("acm")) == 0) {
                     wmep->wmep_acm = simple_strtoul(param[1], NULL, 0);
 
@@ -825,7 +827,7 @@ int aml_wpa_set_dynamic_bw(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -849,7 +851,7 @@ int aml_set_dynamic_bw(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int data = 0;
     struct drv_private *drv_priv = drv_get_drv_priv();
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if ((drv_priv != NULL) && (arg[1] != NULL)) {
         if (strnicmp(arg[1], "on", strlen("on")) == 0) {
             data = 1;
@@ -882,7 +884,7 @@ int aml_wpa_set_short_gi(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -905,7 +907,7 @@ int aml_set_short_gi(struct wlan_net_vif *wnet_vif, char* buf, int len)
     char sep = ' ';
     int cmd_arg;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (!arg[1]) {
         FREE(arg, "cmd_arg");
         AML_PRINT_LOG_ERR("--Bad parameter\n");
@@ -952,7 +954,7 @@ int aml_set_eat_count_max(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int data = 0;
     struct drv_private *drv_priv = drv_get_drv_priv();
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if ((drv_priv != NULL) && (arg[1] != NULL)) {
         data = simple_strtoul(arg[1], NULL, 0);
         drv_set_config((void *)drv_priv, CHIP_PARAM_EAT_COUNT, data);
@@ -973,7 +975,7 @@ int aml_set_aggr_thresh(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int data = 0;
     struct drv_private *drv_priv = drv_get_drv_priv();
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if ((drv_priv != NULL) && (arg[1] != NULL)) {
         data = simple_strtoul(arg[1], NULL, 0);
         drv_set_config((void *)drv_priv, CHIP_PARAM_AGGR_THRESH, data);
@@ -994,7 +996,7 @@ int aml_set_hrtimer_interval(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int data = 0;
     struct drv_private *drv_priv = drv_get_drv_priv();
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if ((drv_priv != NULL) && (arg[1] != NULL)) {
         data = simple_strtoul(arg[1], NULL, 0);
         drv_set_config((void *)drv_priv, CHIP_PARAM_HRTIMER_INTERVAL, data);
@@ -1028,7 +1030,7 @@ int aml_set_roaming_threshold_2g(struct wlan_net_vif *wnet_vif, char* buf, int l
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if ((wnet_vif != NULL)&& (wnet_vif->vm_wmac != NULL) && (arg[1] != NULL)) {
         data = simple_strtol(arg[1], NULL, 0);
         wnet_vif->vm_wmac->roaming_threshold_2g = data;
@@ -1049,7 +1051,7 @@ int aml_set_roaming_threshold_5g(struct wlan_net_vif *wnet_vif, char* buf, int l
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if ((wnet_vif != NULL) && (wnet_vif->vm_wmac != NULL) && (arg[1] != NULL)) {
         data = simple_strtol(arg[1], NULL, 0);
         wnet_vif->vm_wmac->roaming_threshold_5g = data;
@@ -1105,12 +1107,12 @@ int aml_set_roaming_candidate_chans(struct wlan_net_vif *wnet_vif, char* buf, in
     wifimac = wnet_vif->vm_wmac;
     ss = wifimac->wm_scan;
 
-    WIFI_ROAMING_CHANNEL_LOCK(wnet_vif->vm_wmac->wm_scan);
+    WIFI_ROAMING_CHANNLE_LOCK(wnet_vif->vm_wmac->wm_scan);
 
     wnet_vif->vm_wmac->wm_scan->roaming_candidate_chans_cnt = 0;
     memset(wnet_vif->vm_wmac->wm_scan->roaming_candidate_chans, 0, sizeof(wnet_vif->vm_wmac->wm_scan->roaming_candidate_chans));
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     for (i = 1; i < ROAMING_CANDIDATE_CHAN_MAX; i++) {
         if (arg[i] != NULL) {
             data = simple_strtoul(arg[i], NULL, 0);
@@ -1127,12 +1129,12 @@ int aml_set_roaming_candidate_chans(struct wlan_net_vif *wnet_vif, char* buf, in
             WIFI_CHANNEL_UNLOCK(wifimac);
 
         } else {
-           WIFI_ROAMING_CHANNEL_UNLOCK(wnet_vif->vm_wmac->wm_scan);
+           WIFI_ROAMING_CHANNLE_UNLOCK(wnet_vif->vm_wmac->wm_scan);
            FREE(arg, "cmd_arg");
            return 0;
         }
     }
-    WIFI_ROAMING_CHANNEL_UNLOCK(wnet_vif->vm_wmac->wm_scan);
+    WIFI_ROAMING_CHANNLE_UNLOCK(wnet_vif->vm_wmac->wm_scan);
 
     FREE(arg, "cmd_arg");
     return 0;
@@ -1146,7 +1148,7 @@ int aml_set_roaming_mode(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if ((wnet_vif != NULL) && (wnet_vif->vm_wmac != NULL) && (arg[1] != NULL)) {
         data = simple_strtoul(arg[1], NULL, 0);
         wnet_vif->vm_wmac->wm_roaming = data;
@@ -1211,7 +1213,7 @@ int aml_set_udp_info(struct wlan_net_vif *wnet_vif, char* buf, int len)
     char sep = ' ';
     skip = strlen("set_udp_info") + 1;
 
-    arg = aml_cmd_char_parse(sep, buf + skip, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf + skip, &cmd_arg);
     wifi_mac_set_udp_info(arg);
 
     FREE(arg, "cmd_arg");
@@ -1237,7 +1239,7 @@ int aml_unmark_dfs_channel(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if ((wnet_vif != NULL) && (wnet_vif->vm_wmac != NULL)) {
         if (arg[1] != NULL) {
             data = simple_strtoul(arg[1], NULL, 0);
@@ -1261,7 +1263,7 @@ int aml_mark_dfs_channel(struct wlan_net_vif *wnet_vif, char* buf, int len)
      int cmd_arg;
      int data = 0;
 
-     arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+     arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
      if ((wnet_vif != NULL) && (wnet_vif->vm_wmac != NULL)) {
          if (arg[1] != NULL) {
              data = simple_strtoul(arg[1], NULL, 0);
@@ -1286,10 +1288,10 @@ int aml_set_device_sn(struct wlan_net_vif *wnet_vif, char* buf, int len)
     char sep = ' ';
     unsigned int efuse_data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg) {
         sep = ':';
-        mac_cmd = aml_cmd_char_parse(sep, arg[1], &cmd_arg);
+        mac_cmd = aml_cmd_char_phrase(sep, arg[1], &cmd_arg);
         if (mac_cmd) {
             efuse_data = (simple_strtoul(mac_cmd[0],NULL,16) << 8) | (simple_strtoul(mac_cmd[1],NULL,16));
             for (i = 0; i < 16; i++) {
@@ -1314,7 +1316,7 @@ int aml_get_device_sn(struct wlan_net_vif *wnet_vif, char* buf, int len)
     char sep = ' ';
     unsigned int efuse_data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg) {
         efuse_data = efuse_manual_read(simple_strtoul(arg[1],NULL,16));
         AML_PRINT_LOG_INFO("get_dev_sn ===>>> efuse addr:%08x, get SN/ID is: %02x %02x\n", simple_strtoul(arg[1],NULL,16), ((efuse_data & 0xff00) >> 8), (efuse_data & 0x00ff));
@@ -1331,7 +1333,7 @@ int aml_set_signal_power_weak_thresh_for_narrow_bandwidth(struct wlan_net_vif *w
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if ((wnet_vif != NULL) && (wnet_vif->vm_wmac != NULL) && (arg[1] != NULL)) {
         data = simple_strtol(arg[1], NULL, 0);
         wnet_vif->vm_wmac->wm_signal_power_weak_thresh_narrow = data;
@@ -1352,7 +1354,7 @@ int aml_set_signal_power_weak_thresh_for_wide_bandwidth(struct wlan_net_vif *wne
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if ((wnet_vif != NULL) && (wnet_vif->vm_wmac != NULL) && (arg[1] != NULL)) {
         data = simple_strtol(arg[1], NULL, 0);
         wnet_vif->vm_wmac->wm_signal_power_weak_thresh_wide = data;
@@ -1374,7 +1376,7 @@ int aml_set_lagecy_bitrate_mask(struct wlan_net_vif *wnet_vif, char* buf, int le
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1394,7 +1396,7 @@ int aml_set_ht_bitrate_mask(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1415,7 +1417,7 @@ int aml_set_vht_bitrate_mask(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1442,7 +1444,7 @@ int aml_set_coex_req_timeslice_timeout(struct wlan_net_vif *wnet_vif, char* buf,
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1463,7 +1465,7 @@ int aml_set_coex_max_miss_bcn(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1483,7 +1485,7 @@ int aml_set_scan_hang(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1503,7 +1505,7 @@ int aml_set_scan_connect_time(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1524,7 +1526,7 @@ int aml_set_scan_idle_time(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1546,7 +1548,7 @@ int aml_wpa_get_reg(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1567,7 +1569,7 @@ int aml_wpa_set_reg(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int data1 = 0;
     int data2 = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1623,7 +1625,7 @@ int aml_wpa_set_country_code(struct wlan_net_vif *wnet_vif, char* buf, int len)
     char **arg;
     char sep = ' ';
     int cmd_arg;
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
 
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
@@ -1657,7 +1659,7 @@ int aml_wpa_set_power(struct wlan_net_vif *wnet_vif, char* buf, int len)
     char sep = ' ';
     int cmd_arg;
     int data = 0;
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         AML_PRINT_LOG_ERR("char_phrase fail\n");
@@ -1679,7 +1681,7 @@ int aml_wpa_set_channel_rssi(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int data = 0;
 
     wifimac = wifi_mac_get_mac_handle();
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1700,7 +1702,7 @@ int aml_wpa_set_burst(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int data = 0;
 
     wifimac = wifi_mac_get_mac_handle();
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1723,7 +1725,7 @@ int aml_wpa_set_uapsd(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int data = 0;
 
     wifimac = wifi_mac_get_mac_handle();
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1743,7 +1745,7 @@ int aml_wpa_set_pt_rxstart(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1771,7 +1773,7 @@ int aml_wpa_set_scan_pri(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int data = 0;
 
     wifimac = wifi_mac_get_mac_handle();
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1793,7 +1795,7 @@ int aml_wpa_set_bebk_pri(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int data = 0;
 
     wifimac = wifi_mac_get_mac_handle();
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1815,7 +1817,7 @@ int aml_wpa_set_coex_btwifi(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int data = 0;
 
     wifimac = wifi_mac_get_mac_handle();
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1837,7 +1839,7 @@ int aml_wpa_set_coex_bcnmis(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int data = 0;
 
     wifimac = wifi_mac_get_mac_handle();
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1858,7 +1860,7 @@ int aml_wpa_set_bcn_intv(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1879,7 +1881,7 @@ int aml_wpa_set_ldpc(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1919,7 +1921,7 @@ int aml_wpa_set_beamforming(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int data1 = 0;
     int data2 = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1940,7 +1942,7 @@ int aml_wpa_set_pkt_fetch(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1960,7 +1962,7 @@ int aml_wpa_set_frag_thr(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -1982,7 +1984,7 @@ int aml_wpa_set_preamble(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -2003,7 +2005,7 @@ int aml_wpa_set_band(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int data = 0;
     struct drv_private *drv_priv = drv_get_drv_priv();
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -2023,7 +2025,7 @@ int aml_wpa_set_mac_mode(struct wlan_net_vif *wnet_vif, char* buf, int len)
     int data = 0;
     struct drv_private *drv_priv = drv_get_drv_priv();
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
@@ -2043,15 +2045,15 @@ int aml_wpa_set_initial_gain_change_hang(struct wlan_net_vif *wnet_vif, char* bu
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
     }
     data = simple_strtol(arg[1], NULL, 0);
-    aml_txt_parameter.initial_gain_change_disable = data;
+    g_initial_gain_change_disable = data;
 
-    if (aml_txt_parameter.initial_gain_change_disable) {
+    if (g_initial_gain_change_disable) {
         AML_PRINT_LOG_ERR("initial_gain_change invalid\n ");
 
     } else {
@@ -2069,15 +2071,15 @@ int aml_wpa_set_tx_power_change_hang(struct wlan_net_vif *wnet_vif, char* buf, i
     int cmd_arg;
     int data = 0;
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;
     }
     data = simple_strtol(arg[1], NULL, 0);
-    aml_txt_parameter.tx_power_change_disable = data;
+    g_tx_power_change_disable = data;
 
-    if (aml_txt_parameter.tx_power_change_disable) {
+    if (g_tx_power_change_disable) {
         AML_PRINT_LOG_ERR("tx_power_change invalid\n ");
 
     } else {
@@ -2097,7 +2099,7 @@ int aml_set_tx_power_plan(struct wlan_net_vif *wnet_vif, char* buf, int len)
 
     struct drv_private *drv_priv = drv_get_drv_priv();
 
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if ((drv_priv != NULL) && (arg[1] != NULL)) {
         data = simple_strtoul(arg[1], NULL, 0);
         wifimac_set_tx_pwr_plan(data);
@@ -2126,7 +2128,7 @@ int aml_wpa_set_debug(struct wlan_net_vif *wnet_vif, char* buf, int len)
     char **arg;
     char sep = ' ';
     int cmd_arg;
-    arg = aml_cmd_char_parse(sep, buf, &cmd_arg);
+    arg = aml_cmd_char_phrase(sep, buf, &cmd_arg);
     if (arg[1] == NULL) {
         FREE(arg, "cmd_arg");
         return -EINVAL;

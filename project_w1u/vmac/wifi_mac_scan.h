@@ -130,8 +130,8 @@ struct wifi_mac_scan_state
 #define WIFI_SCAN_LOCK(_ss) OS_SPIN_LOCK_IRQ(&(_ss)->scan_lock, (_ss)->scan_lock_flag)
 #define WIFI_SCAN_UNLOCK(_ss) OS_SPIN_UNLOCK_IRQ(&(_ss)->scan_lock, (_ss)->scan_lock_flag)
 
-#define WIFI_ROAMING_CHANNEL_LOCK(_ss)OS_SPIN_LOCK_IRQ(&(_ss)->roaming_chan_lock, (_ss)->roaming_chan_lock_flag)
-#define WIFI_ROAMING_CHANNEL_UNLOCK(_ss)OS_SPIN_UNLOCK_IRQ(&(_ss)->roaming_chan_lock, (_ss)->roaming_chan_lock_flag)
+#define WIFI_ROAMING_CHANNLE_LOCK(_ss)OS_SPIN_LOCK_IRQ(&(_ss)->roaming_chan_lock, (_ss)->roaming_chan_lock_flag)
+#define WIFI_ROAMING_CHANNLE_UNLOCK(_ss)OS_SPIN_UNLOCK_IRQ(&(_ss)->roaming_chan_lock, (_ss)->roaming_chan_lock_flag)
 
 struct wifi_mac_scan_param
 {
@@ -274,20 +274,6 @@ struct wifi_scan_info
 #define STA_MATCH_ERR_STA_FAILS_MAX         (1<<7)
 #define STA_MATCH_ERR_STA_PURGE_SCANS       (1<<8)
 
-/// Maximum number of SSIDs in a scan request
-
-/// Channel Flag
-enum mac_chan_flags
-{
-    /// Cannot initiate radiation on this channel
-    CHAN_NO_IR = BIT(0),
-    /// Channel is not allowed
-    CHAN_DISABLED = BIT(1),
-    /// Radar detection required on this channel
-    CHAN_RADAR = BIT(2),
-};
-
-
 #define LEAKY_AP_DET_WIN                    20
 struct scaninfo_entry
 {
@@ -306,7 +292,6 @@ void wifi_mac_scan_attach(struct wifi_mac *);
 void wifi_mac_scan_detach(struct wifi_mac *);
 void wifi_mac_scan_vattach(struct wlan_net_vif *);
 void wifi_mac_scan_vdetach(struct wlan_net_vif *);
-int wifi_mac_chk_ap_chan(struct wifi_mac_scan_state *ss, struct wlan_net_vif *wnet_vif);
 int wifi_mac_start_scan(struct wlan_net_vif *, int flags, unsigned int nssid, const struct wifi_mac_ScanSSID ssids[]);
 int wifi_mac_chk_scan(struct wlan_net_vif *, int flags, unsigned int nssid, const struct wifi_mac_ScanSSID ssids[]);
 void wifi_mac_cancel_scan(struct wifi_mac *wifimac);
@@ -337,9 +322,5 @@ int wifi_mac_scan_access(struct wlan_net_vif *wnet_vif);
 int wifi_mac_scan_forbidden_timeout(void *arg);
 unsigned char wifi_mac_scan_check_available(struct wlan_net_vif *wnet_vif);
 unsigned char wifi_mac_set_scan_dwell_time(struct wifi_mac *wifimac, unsigned short duration, unsigned char mandatory);
-#ifdef PNO_SUPPORT
-int aml_send_sched_scan_req(struct wlan_net_vif *wnet_vif, struct cfg80211_sched_scan_request *request);
-int aml_send_sched_scan_stop(struct wlan_net_vif *wnet_vif, unsigned long long reqid);
-#endif
 
 #endif /* _WIFI_NET_SCAN_H_ */

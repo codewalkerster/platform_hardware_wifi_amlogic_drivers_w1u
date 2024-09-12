@@ -98,7 +98,6 @@
 #define WIFI_MIN_STA_ID  1
 #define WIFI_MAX_TXQUEUE_ID  10
 #define WIFI_MAX_TXFRAME  128//64//48
-#define WIFI_TXFRAME_TXID_VALID BIT(0)
 #define WIFI_MAX_FW_EVENT 8
 /* shijie.chen add,
  * for expanding buffer of rxcomplete status to avoid overlapping or overwriting. */

@@ -219,7 +219,7 @@ struct country_set
     struct county_global_map opt_idx_map[MAX_CLASS_NUM];
 };
 
-#define MAX_NA_FREQ_NUM (15)
+#define MAX_NA_FREQ_NUM (8)
 struct country_na_freq_info
 {
     char g_operating_class;
@@ -232,19 +232,6 @@ struct country_na_freq_set
     struct country_na_freq_info na_freq_info[10];
 };
 
-#ifdef AML_CHANLIST_ADJUST
-struct chan_add_info {
-    unsigned char add_chan_num;
-    struct wifi_channel con_add_chan[60];
-};
-
-struct country_chan_adjust {
-    char country[3];
-    struct country_na_freq_set con_del_chan;
-    struct chan_add_info con_add_chan_info;
-    unsigned char chan_dfs_flag;
-};
-#endif
 #define MAX_P2PIE_NUM         4
 
 #define WIFINET_CHAN_MAX            256
@@ -387,10 +374,8 @@ enum wifi_mac_recovery_source
 #define WIFINET_RECOVERY_SRC_MASK ((BIT(WIFINET_RECOVERY_SRC_MAX) - 1) & (~ (BIT(WIFINET_RECOVERY_SRC_NONE + 1) - 1)))
 #define WIFINET_RECOVERY_CHECK_ONCE (BIT(WIFINET_RECOVERY_SRC_PAGE_ERROR) | BIT(WIFINET_RECOVERY_SRC_WAKE_FAIL)\
                                      | BIT(WIFINET_RECOVERY_SRC_CMD_CRASH) | BIT(WIFINET_RECOVERY_SRC_SDIO_TIMEOUT))
-#define IS_RECOVERY_CHECK_ONCE(_src) ((_src) & WIFINET_RECOVERY_CHECK_ONCE)
-
-#define WIFINET_RECOVERY_GET_TX_INFO (BIT(WIFINET_RECOVERY_SRC_TX_STUCK) | BIT(WIFINET_RECOVERY_SRC_TX_FAIL) | BIT(WIFINET_RECOVERY_SRC_PAGE_ERROR))
-#define IS_RECOVERY_GET_TX_INFO(_src) ((_src) && !((_src) & !WIFINET_RECOVERY_GET_TX_INFO))
+#define IS_RECOVERY_CHECK_ONCE(_src) (_src & WIFINET_RECOVERY_CHECK_ONCE)
+#define IS_RECOVERY_GET_TX_INFO(_src) (_src & (BIT(WIFINET_RECOVERY_SRC_TX_STUCK) | BIT(WIFINET_RECOVERY_SRC_TX_FAIL)))
 
 #define WIFINET_F_DOSORT 0x00000001
 #define WIFINET_F_DOFRATE 0x00000002

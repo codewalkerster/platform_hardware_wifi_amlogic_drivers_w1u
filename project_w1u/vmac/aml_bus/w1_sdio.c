@@ -77,17 +77,16 @@ unsigned int aml_w1_bt_hi_read_word(unsigned int addr)
      * all 128k space in one sdio-function use only
      * one address-mapping: 32-bit AHB Address = BaseAddr + cmdRegAddr
      */
+
     reg_tmp = g_w1_hif_ops.hi_read_word(RG_SDIO_IF_MISC_CTRL);
 
-    if (!(reg_tmp & BIT(23)))
-    {
+    if (!(reg_tmp & BIT(23))) {
         reg_tmp |= BIT(23);
         g_w1_hif_ops.hi_write_word(RG_SDIO_IF_MISC_CTRL, reg_tmp);
     }
 
     /*config msb 15 bit address in BaseAddr Register*/
-    g_w1_hif_ops.hi_write_reg32(RG_SCFG_FUNC5_BADDR_A, addr & 0xfffe0000);
-
+    g_w1_hif_ops.hi_write_reg32(RG_SCFG_FUNC5_BADDR_A,addr & 0xfffe0000);
     g_w1_hif_ops.bt_hi_read_sram((unsigned char*)(SYS_TYPE)&regdata,
         /*sdio cmd 52/53 can only take 17 bit address*/
         (unsigned char*)(SYS_TYPE)(addr & 0x1ffff), sizeof(unsigned int));
@@ -106,13 +105,12 @@ void aml_w1_bt_hi_write_word(unsigned int addr,unsigned int data)
      */
     reg_tmp = g_w1_hif_ops.hi_read_word(RG_SDIO_IF_MISC_CTRL);
 
-    if (!(reg_tmp & BIT(23)))
-    {
+    if (!(reg_tmp & BIT(23))) {
         reg_tmp |= BIT(23);
         g_w1_hif_ops.hi_write_word(RG_SDIO_IF_MISC_CTRL, reg_tmp);
     }
     /*config msb 15 bit address in BaseAddr Register*/
-    g_w1_hif_ops.hi_write_reg32(RG_SCFG_FUNC5_BADDR_A, addr & 0xfffe0000);
+    g_w1_hif_ops.hi_write_reg32(RG_SCFG_FUNC5_BADDR_A,addr & 0xfffe0000);
 
     g_w1_hif_ops.bt_hi_write_sram((unsigned char *)&data,
         /*sdio cmd 52/53 can only take 17 bit address*/
@@ -445,7 +443,7 @@ unsigned int aml_w1_sdio_read_word(unsigned int addr)
 {
     unsigned int regdata = 0;
 
-    // for bt access always on reg
+// for bt access always on reg
     if ((addr & 0x00f00000) == 0x00f00000)
     {
         regdata = aml_w1_aon_read_reg(addr);
@@ -1235,50 +1233,39 @@ void config_pmu_reg_off(void)
         aml_w1_sdio_bottom_write8(SDIO_FUNC1, 0x221, host_req_status);
     }
 }
-
-#if 1
-extern lp_shutdown_func g_lp_shutdown_func;
+#if 0
 extern int wifi_irq_num(void);
 static void aml_sdio_shutdown(struct device *device)
 {
+    printk("===>>> enter %s <<<===\n", __func__);
     if (wifi_irq_enable == 1) {
-#ifndef USE_SDIO_IRQ
-        unsigned int irq_num = wifi_irq_num();
-#endif
-        printk("===>>> start %s <<<===\n", __func__);
 
-        if (g_lp_shutdown_func != NULL)
-        {
-            g_lp_shutdown_func();
-        }
-
-        //notify bt wifi will go shutdown
-        aml_w1_sdio_write_word(RG_AON_A56, aml_w1_sdio_read_word(RG_AON_A56) | BIT(31));
 #ifdef USE_SDIO_IRQ
         struct sdio_func *func = g_w1_hwif_sdio.sdio_func_if[SDIO_FUNC1];
         sdio_claim_host(func);
         sdio_release_irq(func);
         sdio_release_host(func);
 #else
+        unsigned int irq_num = wifi_irq_num();
         disable_irq(irq_num);
 #endif
+
         wifi_irq_enable = 0;
     }
-
     shutdown_i += 1;
-    printk("=== shutdown_i:%d ===\n", shutdown_i);
-
     if (shutdown_i == 1) {
         wifi_sdio_shutdown = 1;
-        //config_pmu_reg_off();
+        config_pmu_reg_off();
     } else if (shutdown_i == 7) {
         shutdown_i = 0;
-        printk("===>>> end %s <<<===\n", __func__);
+        printk("===>>> end <<<===\n");
+    } else {
+        ;
     }
+    printk("=== shutdown_i:%d ===\n", shutdown_i);
 }
 #endif
 
-#if 0
 extern lp_shutdown_func g_lp_shutdown_func;
 
 //The shutdown interface will be called 7 times by the driver, and msg only needs to send once
@@ -1300,7 +1287,7 @@ void aml_sdio_shutdown(struct device *device)
     //notify bt wifi will go shutdown
     aml_w1_sdio_write_word(RG_AON_A56, aml_w1_sdio_read_word(RG_AON_A56) | BIT(31));
 }
-#endif
+
 static SIMPLE_DEV_PM_OPS(aml_sdio_pm_ops, aml_sdio_pm_suspend,
                      aml_sdio_pm_resume);
 

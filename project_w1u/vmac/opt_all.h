@@ -38,11 +38,6 @@ extern struct mutex usb_mutex;
 #define HAL_END_LOCK()              OS_MUTEX_UNLOCK(&g_hal_priv.hal_phy_mutex);
 #define HAL_LOCK_DESTROY()   mutex_destroy(&g_hal_priv.hal_phy_mutex);
 
-#define HAL_SPEC_LOCK_INIT()         	 mutex_init(&g_hal_priv.hal_spec_mutex)
-#define HAL_SPEC_BEGIN_LOCK()            OS_MUTEX_LOCK(&g_hal_priv.hal_spec_mutex);
-#define HAL_SPEC_END_LOCK()              OS_MUTEX_UNLOCK(&g_hal_priv.hal_spec_mutex);
-#define HAL_SPEC_LOCK_DESTROY()          mutex_destroy(&g_hal_priv.hal_spec_mutex);
-
 #define POWER_LOCK_INIT()  mutex_init(&g_hal_priv.power_mutex)
 #define POWER_BEGIN_LOCK()  OS_MUTEX_LOCK(&g_hal_priv.power_mutex);
 #define POWER_END_LOCK()  OS_MUTEX_UNLOCK(&g_hal_priv.power_mutex);
@@ -53,7 +48,7 @@ extern struct mutex usb_mutex;
 #define COMMON_LOCK() do { OS_SPIN_LOCK_IRQ(&(g_hal_priv).com_spinlock, g_hal_priv.com_spinlock_flag); } while (0)
 #define COMMON_UNLOCK() do { OS_SPIN_UNLOCK_IRQ(&(g_hal_priv).com_spinlock, g_hal_priv.com_spinlock_flag); } while (0)
 
-#ifdef CONFIG_USB
+#ifndef CONFIG_USB_CLOSE
 #ifndef USB_BUILD_IN
 #define USB_LOCK_INIT()  mutex_init(&usb_mutex)
 #define USB_BEGIN_LOCK()  OS_MUTEX_LOCK(&usb_mutex);

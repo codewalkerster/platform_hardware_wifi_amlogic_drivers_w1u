@@ -70,7 +70,6 @@
 #include "wifi_mac_concurrent.h"
 #include "wifi_pkt_desc.h"
 #include "rf_d_adda_xmit_reg.h"
-#include "aml_regdom.h"
 
 extern const char *wifi_mac_state_name[WIFINET_S_MAX];
 

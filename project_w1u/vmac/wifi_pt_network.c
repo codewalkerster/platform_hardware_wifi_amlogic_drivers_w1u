@@ -298,7 +298,7 @@ void Net_Send( unsigned char type, unsigned char* input)
         cursor = buffer + gB2BTestCasePacket.pkt_length;
 
         //AML_PRINT_LOG_INFO( "---aml debug--: pkt len: %d.\n",pkt_len);
-        //dump_memory_internal(buffer,48);
+        //dump_memory_internel(buffer,48);
         B2B_Net_RequestTransmit(skb,cursor-buffer,TrcConfMib.tid);
         //Net_RequestTransmit(buffer,pkt_len,TrcConfMib.tid);
 
@@ -322,7 +322,7 @@ void Net_Receive(unsigned char *packet,unsigned short len,unsigned char rssi)
         //DBG_ENTER();
         //
        // if(STA2_VMAC1_RX_FRAME_DUMP)
-        // dump_memory_internal(packet,len);
+        // dump_memory_internel(packet,len);
 
         frame_control = *(unsigned int*)packet;
         headerlength = MacFrame_GetHeaderSize( frame_control );

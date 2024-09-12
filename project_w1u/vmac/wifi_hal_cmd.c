@@ -48,7 +48,13 @@ MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
 char * conf_path = WIFI_CONF_PATH;
 module_param(conf_path, charp, S_IRUGO);
 
-TXTParameter aml_txt_parameter;
+unsigned char g_tx_power_change_disable = 0;
+unsigned char g_wftx_pwrtbl_en = 0;
+unsigned char g_initial_gain_change_disable = 0;
+unsigned char g_ant_sel_en = 0;
+unsigned char g_ant_gpio_cfg = 0;
+unsigned char g_wifi_fwlog_by_file = 0;
+
 struct WF2G_Txpwr_Param g_wf2g_txpwr_param;
 struct WF5G_Txpwr_Param g_wf5g_txpwr_param;
 extern unsigned char tpc_mode;
@@ -895,7 +901,7 @@ void phy_set_channel_rssi(unsigned char rssi)
     channel_switch.flag = 0;
     channel_switch.flag |= CHANNEL_RSSI_FLAG;
 
-    if (aml_txt_parameter.initial_gain_change_disable) {
+    if (g_initial_gain_change_disable) {
         return;
     }
 
@@ -928,14 +934,14 @@ unsigned int phy_set_bcn_intvl(unsigned char vid,unsigned int bcninterval)
 unsigned int phy_set_ac_param(unsigned char wnet_vif_id,unsigned char ac,unsigned char aifsn,
     unsigned char cwminmax,unsigned short txop)
 {
-    struct hal_private * hal_priv = hal_get_priv();
-    unsigned int wme_acparam = aifsn | (cwminmax << 8) | (txop << 16);
+    struct hal_private * hal_priv =hal_get_priv();
+    unsigned int wme_acparam = aifsn|(cwminmax<<8)|(txop<<16);
 
-    AML_PRINT_LOG_INFO("vid:%d, ac:%d, aifsn:%d, cwminmax:%02x, txop:%d\n", wnet_vif_id, ac, aifsn, cwminmax, txop);
+    PRINT("%s-->wnet_vif_id:%d, aifsn:%d, cwminmax:%02x txop:%d\n",__func__, wnet_vif_id, aifsn, cwminmax, txop);
 
     if((cwminmax ==0)||(aifsn==0))
     {
-        AML_PRINT_LOG_ERR("vid:%d, ac:%d, ERROR!\n", wnet_vif_id, ac);
+        PRINT("phy_set_ac_param wnet_vif_id %d ERROR!\n",wnet_vif_id);
         return -1;
     }
 
@@ -959,7 +965,7 @@ unsigned int phy_set_ac_param(unsigned char wnet_vif_id,unsigned char ac,unsigne
             phy_set_param_cmd(AC_VO_Param_Cmd,wnet_vif_id,wme_acparam);
             break;
         default:
-            AML_PRINT_LOG_ERR("vid:%d, ac:%d is default\n", wnet_vif_id, ac);
+            PRINT(" phy_set_ac_param Err: queue_id=%d is fault \n",ac);
             break;
     }
 
@@ -1175,6 +1181,7 @@ int phy_set_suspend(unsigned char vid, unsigned char enable,
     bool ret = false;
     int cnt = 0;
     unsigned int ptr = 0;
+    unsigned char powersave_init_flag_print = 0;
 
     suspend_cmd.Cmd = WoW_Enable_Cmd;
     suspend_cmd.vid = vid;
@@ -1292,13 +1299,14 @@ int phy_set_suspend(unsigned char vid, unsigned char enable,
     ret = hi_set_cmd((unsigned char *)&suspend_cmd, sizeof(struct SuspendCmd));
 
     POWER_BEGIN_LOCK();
+    powersave_init_flag_print = hal_priv->powersave_init_flag;
     if (ret && (enable == 1) && (hal_priv->powersave_init_flag == 0))
     {
         hal_priv->hal_fw_ps_status = HAL_FW_IN_SLEEP;
         AML_PRINT_LOG_INFO("HAL_FW_IN_SLEEP\n");
         atomic_set(&hal_priv->drv_suspend_cnt, 1);
         {
-#ifdef CONFIG_USB
+#ifndef CONFIG_USB_CLOSE
             if (hal_priv->hal_fw_usb_status == 0)
             {
                 USB_BEGIN_LOCK();
@@ -1344,7 +1352,7 @@ int phy_set_suspend(unsigned char vid, unsigned char enable,
         if ((hif->HiStatus.Tx_Free_num != hif->HiStatus.Tx_Send_num)
             || (hif->HiStatus.Tx_Done_num != hif->HiStatus.Tx_Send_num))
         {
-            AML_PRINT_LOG_INFO("free:%d, done:%d, send:%d\n",
+            AML_PRINT_LOG_INFO("free %d, done %d, send %d\n",
                 hif->HiStatus.Tx_Free_num, hif->HiStatus.Tx_Done_num, hif->HiStatus.Tx_Send_num);
         }
         /* flush packetes when suspend and when resume restore initial value */
@@ -1354,7 +1362,7 @@ int phy_set_suspend(unsigned char vid, unsigned char enable,
     }
 
     AML_PRINT_LOG_INFO("%s end, enable:%d, mode:%d, vid:%d, filter:0x%x, ret:%d, powersave_init_flag:%d\n",
-        ((enable == 1) ? "suspend" : "resume"), enable, mode, vid, filters, ret, hal_priv->powersave_init_flag);
+        ((enable == 1) ? "suspend" : "resume"), enable, mode, vid, filters, ret, powersave_init_flag_print);
     return 0;
 }
 
@@ -1617,46 +1625,37 @@ unsigned int phy_interface_enable(unsigned char enable, unsigned char vid)
 unsigned char print_type = 0;
 unsigned int hal_set_fwlog_cmd(unsigned char mode)
 {
-    struct hal_private * p_hal_priv = hal_get_priv();
     struct hw_interface* hif = hif_get_hw_interface();
     struct Fwlog_Mode_Control fwlog_mode;
     memset(&fwlog_mode, 0, sizeof(struct Fwlog_Mode_Control));
-    AML_PRINT_LOG_INFO("fw log mode:%d\n", mode);
+    AML_PRINT_LOG_INFO("mode %d \n", mode);
 
     fwlog_mode.Cmd = FWLOG_MODE_CMD;
-    if (mode == UART_MODE)
+    if (mode == 0)
     {
-        fwlog_mode.mode = UART_MODE;
+        fwlog_mode.mode = 0;
         /* reset ram share */
         hif->hif_ops.hi_write_word(0x00a0d0e4, 0x0000007f);
     }
     else
     {
         fwlog_mode.mode = mode;
-        if (mode == WRITE_SRAM_MODE)
+        if (mode == 1)
         {
             hif->hif_ops.hi_write_word(0x00a0d0e4, 0x8000007f);
             print_type = 0;
         }
-        else if (mode == HOST_PRINTING)
+        else if (mode == 3)
         {
             hal_get_fwlog();
         }
-        else if (mode == OPEN_AUTO_PRINT) //open auto print
+        else if (mode == 4) //open auto print
         {
             print_type = 1;
         }
-        else if (mode == CLOSE_AUTO_PRINT) //close auto print
+        else if (mode == 5) //close auto print
         {
             print_type = 0;
-        }
-        else if (mode == FWLOG_AON_PIN_MUX_DISABLE)
-        {
-            p_hal_priv->hal_fw_log_flag = 0;
-        }
-        else if (mode == FWLOG_AON_PIN_MUX_ENABLE)
-        {
-            p_hal_priv->hal_fw_log_flag = 1;
         }
     }
 
@@ -2039,7 +2038,7 @@ void phy_set_tx_power_percentage(char percentage, unsigned short channel_num, un
 
 unsigned char get_fwlog_mode()
 {
-    return aml_txt_parameter.wifi_fwlog_by_file;
+    return g_wifi_fwlog_by_file;
 }
 
 unsigned char parse_cali_param(char *varbuf, int len, struct Cali_Param *cali_param)
@@ -2066,22 +2065,20 @@ unsigned char parse_cali_param(char *varbuf, int len, struct Cali_Param *cali_pa
     get_s8_item(varbuf, len, "rf_count", &cali_param->rf_num);
     get_s8_item(varbuf, len, "wftx_pwrtbl_en", &cali_param->wftx_pwrtbl_en);
     get_s8_item(varbuf, len, "digital_code_gain_limit", (char *)&cali_param->digital_gain_limit);
-    get_s8_item(varbuf, len, "wftx_power_change_disable", &aml_txt_parameter.tx_power_change_disable);
-    get_s8_item(varbuf, len, "initial_gain_change_disable", &aml_txt_parameter.initial_gain_change_disable);
-    get_s8_item(varbuf, len, "ant_sel_en", &aml_txt_parameter.ant_sel_en);
-    get_s8_item(varbuf, len, "ant_gpio_cfg", &aml_txt_parameter.ant_gpio_cfg);
-    get_s8_item(varbuf, len, "wifi_fwlog_by_file", &aml_txt_parameter.wifi_fwlog_by_file);
-    get_s8_item(varbuf, len, "channel_2g_20Mhz_only", &aml_txt_parameter.channel_2g_20Mhz_only);
+    get_s8_item(varbuf, len, "wftx_power_change_disable", &g_tx_power_change_disable);
+    get_s8_item(varbuf, len, "initial_gain_change_disable", &g_initial_gain_change_disable);
+    get_s8_item(varbuf, len, "ant_sel_en", &g_ant_sel_en);
+    get_s8_item(varbuf, len, "ant_gpio_cfg", &g_ant_gpio_cfg);
+    get_s8_item(varbuf, len, "wifi_fwlog_by_file", &g_wifi_fwlog_by_file);
 
     if (aml_wifi_get_cali_proofing() != INVALID_PARAM_VALUE) {
         cali_proofing = aml_wifi_get_cali_proofing();
     }
 
     cali_param->version = version;
-    cali_param->cali_config = cali_config;
-    aml_txt_parameter.wftx_pwrtbl_en = cali_param->wftx_pwrtbl_en;
+    g_wftx_pwrtbl_en = cali_param->wftx_pwrtbl_en;
 
-    if (aml_txt_parameter.wftx_pwrtbl_en != 2) {
+    if (g_wftx_pwrtbl_en != 2) {
         tpc_mode = 1;
     } else {
         tpc_mode = 2;
@@ -2110,16 +2107,15 @@ unsigned char parse_cali_param(char *varbuf, int len, struct Cali_Param *cali_pa
     AML_PRINT_LOG_INFO("======>>>>>> rf_count = %d\n", cali_param->rf_num);
     AML_PRINT_LOG_INFO("======>>>>>> wftx_pwrtbl_en = %d\n", cali_param->wftx_pwrtbl_en);
     AML_PRINT_LOG_INFO("======>>>>>> platform_versionid = %d\n", cali_param->platform_versionid);
-    AML_PRINT_LOG_INFO("======>>>>>> wftx_power_change_disable = %d\n", aml_txt_parameter.tx_power_change_disable);
-    AML_PRINT_LOG_INFO("======>>>>>> initial_gain_change_disable = %d\n", aml_txt_parameter.initial_gain_change_disable);
-    AML_PRINT_LOG_INFO("======>>>>>> g_ant_sel_en = %d\n", aml_txt_parameter.ant_sel_en);
-    AML_PRINT_LOG_INFO("======>>>>>> g_ant_gpio_cfg = %d\n", aml_txt_parameter.ant_gpio_cfg);
+    AML_PRINT_LOG_INFO("======>>>>>> wftx_power_change_disable = %d\n", g_tx_power_change_disable);
+    AML_PRINT_LOG_INFO("======>>>>>> initial_gain_change_disable = %d\n", g_initial_gain_change_disable);
+    AML_PRINT_LOG_INFO("======>>>>>> g_ant_sel_en = %d\n", g_ant_sel_en);
+    AML_PRINT_LOG_INFO("======>>>>>> g_ant_gpio_cfg = %d\n", g_ant_gpio_cfg);
     AML_PRINT_LOG_INFO("======>>>>>> digital gain = %s min_2g:0x%x max_2g:0x%x min_5g:0x%x max_5g:0x%x\n",
             (cali_param->digital_gain_limit.enable == 1 ? "enable" : "disable"),
             cali_param->digital_gain_limit.min_2g, cali_param->digital_gain_limit.max_2g,
             cali_param->digital_gain_limit.min_5g, cali_param->digital_gain_limit.max_5g);
-     AML_PRINT_LOG_INFO("======>>>>>> wifi_fwlog_by_file = %d\n", aml_txt_parameter.wifi_fwlog_by_file);
-     AML_PRINT_LOG_INFO("======>>>>>> channel_2g_20Mhz_only = %d\n", aml_txt_parameter.channel_2g_20Mhz_only);
+     AML_PRINT_LOG_INFO("======>>>>>> wifi_fwlog_by_file = %d\n", g_wifi_fwlog_by_file);
 
     if (!aml_wifi_is_enable_rf_test() && cali_proofing && (efuse_manual_read(0x0b) == 0)) {
         AML_PRINT_LOG_ERR(" the chip is not calibration!\n");
@@ -2260,7 +2256,7 @@ void phy_set_tx_power_accord_rssi(int bw, unsigned short channel, unsigned char 
     channel_switch.flag = 0;
     channel_switch.flag |= CHANNEL_RSSI_PWR_FLAG;
 
-    if (!aml_txt_parameter.tx_power_change_disable) {
+    if (!g_tx_power_change_disable) {
 
         if (power_mode == 2) {
             AML_PRINT_LOG_INFO("*** change power enhance, bw %d channel %d \n", channel_switch.bw, channel_switch.channel);
@@ -2278,7 +2274,7 @@ void phy_set_tx_power_accord_rssi(int bw, unsigned short channel, unsigned char 
         }
 
         if (power_mode == 1) {
-            if (aml_txt_parameter.wftx_pwrtbl_en == 0) {
+            if (g_wftx_pwrtbl_en == 0) {
                 AML_PRINT_LOG_INFO("*** change power default,bw %d channel %d \n", channel_switch.bw, channel_switch.channel);
                 set_tx_power_param_default(&wf2g_txpwr_param, &wf5g_txpwr_param);
 
@@ -2287,7 +2283,7 @@ void phy_set_tx_power_accord_rssi(int bw, unsigned short channel, unsigned char 
                 hi_set_cmd((unsigned char *)&wf5g_txpwr_param, sizeof(struct WF5G_Txpwr_Param));
                 HAL_END_LOCK();
 
-            } else if (aml_txt_parameter.wftx_pwrtbl_en == 1){
+            } else if (g_wftx_pwrtbl_en == 1){
                 AML_PRINT_LOG_INFO("*** change power mode 1,bw %d channel %d \n", channel_switch.bw, channel_switch.channel);
                 AML_PRINT_LOG_INFO("*** change power mode 1,0x%x  0x%x \n", g_wf2g_txpwr_param.wf2g_pwr_tbl[0][0] , g_wf2g_txpwr_param.wf2g_pwr_tbl[0][1]);
                 HAL_BEGIN_LOCK();
@@ -2332,25 +2328,13 @@ unsigned char get_cali_param(struct Cali_Param *cali_param, struct WF2G_Txpwr_Pa
         memset(chip_id_buf,'\0',sizeof(chip_id_buf));
         switch ((vendor_sn & 0xff00) >> 8) {
             case MODULE_ITON:
-#ifndef UBUNTU_PT_MODE
                 sprintf(chip_id_buf, "%s/aml_wifi_rf_iton.txt", conf_path);
-#else
-                sprintf(chip_id_buf, "%s/aml_wifi_rf_sdio.txt", conf_path);
-#endif
                 break;
             case MODULE_AMPAK:
-#ifndef UBUNTU_PT_MODE
                 sprintf(chip_id_buf, "%s/aml_wifi_rf_ampak.txt", conf_path);
-#else
-                sprintf(chip_id_buf, "%s/aml_wifi_rf_sdio.txt", conf_path);
-#endif
                 break;
             case MODULE_FN_LINK:
-#ifndef UBUNTU_PT_MODE
                 sprintf(chip_id_buf, "%s/aml_wifi_rf_fn_link.txt", conf_path);
-#else
-                sprintf(chip_id_buf, "%s/aml_wifi_rf_sdio.txt", conf_path);
-#endif
                 break;
             default:
                 if(aml_bus_type) {
@@ -2516,12 +2500,7 @@ void phy_set_cf_end(unsigned char vid, unsigned char is_enable)
 
 unsigned char hal_ant_sel_en_get(void)
 {
-    return aml_txt_parameter.ant_sel_en;
-}
-
-unsigned char hal_get_channel_2g_20Mhz_only(void)
-{
-    return aml_txt_parameter.channel_2g_20Mhz_only;
+    return g_ant_sel_en;
 }
 
 #ifdef HAL_SIM_VER

@@ -58,21 +58,6 @@ int sdioclk = 3000000;
 #endif
 #endif
 
-#ifdef UBUNTU_PT_MODE
-void set_usb_bt_power(int is_on)
-{
- //do nothing for ubuntu
-    return;
-
-}
-
-void set_usb_wifi_power(int is_on)
-{
-    //do nothing for ubuntu
-    return;
-}
-#endif
-
 struct sdio_func *aml_priv_to_func(int func_n)
 {
     ASSERT(func_n >= 0 &&  func_n < SDIO_FUNCNUM_MAX);
@@ -1259,16 +1244,12 @@ void aml_sdio_disable_irq(int func_n)
     }
 }
 
-int aml_sdio_calibration(void)
+void aml_sdio_calibration(void)
 {
     struct hw_interface *hif = hif_get_hw_interface();
     int err;
     unsigned char i, j, k, l;
     unsigned char step;
-
-#ifdef UBUNTU_PT_MODE
-    unsigned char count = 0;
-#endif
 
     step = 4;
     hif->hif_ops.hi_bottom_write8(SDIO_FUNC1, 0x2c0, 0);
@@ -1292,15 +1273,9 @@ int aml_sdio_calibration(void)
                         hif->hif_ops.hi_bottom_write8(SDIO_FUNC0, SDIO_CCCR_IOABORT, 0x1);
                         AML_PRINT_LOG_INFO("error: i:%d, j:%d, k:%d, l:%d\n", i, j, k, l);
 
-#ifdef UBUNTU_PT_MODE
-                        if (count++ > 5) {
-                            return 1;
-                        }
-#endif
-
                     } else {
                         AML_PRINT_LOG_INFO("right, use this config: i:%d, j:%d, k:%d, l:%d\n", i, j, k, l);
-                        return 0;
+                        return;
                     }
                 }
             }
@@ -1311,7 +1286,6 @@ int aml_sdio_calibration(void)
     hif->hif_ops.hi_bottom_write8(SDIO_FUNC1, 0x2c3, 0);
     hif->hif_ops.hi_bottom_write8(SDIO_FUNC1, 0x2c4, 0);
     hif->hif_ops.hi_bottom_write8(SDIO_FUNC1, 0x2c5, 0);
-    return 0;
 }
 
 void set_reg_fragment(unsigned int addr,unsigned int bit_end,
@@ -1385,10 +1359,6 @@ static void config_pmu_reg(bool is_power_on)
     int value_pmu_A20 = 0;
     int value_pmu_A22 = 0;
 
-#ifdef UBUNTU_PT_MODE
-    unsigned char count;
-#endif
-
     unsigned char host_req_status;
     unsigned char wifi_pmu_status;
 
@@ -1439,12 +1409,6 @@ static void config_pmu_reg(bool is_power_on)
         while ((wifi_pmu_status & 0xF) != PMU_ACT_MODE) {
             AML_PRINT_LOG_INFO("wifi_pmu_status:0x%x\n", wifi_pmu_status);
             wifi_pmu_status = halpriv->hal_ops.hal_get_fw_ps_status();
-
-#ifdef UBUNTU_PT_MODE
-            if ((wifi_pmu_status == 0x0) && (count++ > 5)) {
-                return ;
-            }
-#endif
         }
 
         value_pmu_A15 = hif->hif_ops.hi_read_word(RG_PMU_A15);
@@ -1479,10 +1443,10 @@ static void config_pmu_reg(bool is_power_on)
         value_pmu_A18 = hif->hif_ops.hi_read_word(RG_PMU_A18);
         value_pmu_A20 = hif->hif_ops.hi_read_word(RG_PMU_A20);
         value_pmu_A22 = hif->hif_ops.hi_read_word(RG_PMU_A22);
-        AML_PRINT_LOG_INFO("power off: after write A12=0x%x, A15=0x%x, A17=0x%x, A18=0x%x, A20=0x%x, A22=0x%x\n",
+        AML_PRINT_LOG_INFO("power off: before write A12=0x%x, A15=0x%x, A17=0x%x, A18=0x%x, A20=0x%x, A22=0x%x\n",
             value_pmu_A12,value_pmu_A15,value_pmu_A17,value_pmu_A18,value_pmu_A20,value_pmu_A22);
 
-        //force wifi pmu fsm to sleep mode
+     //force wifi pmu fsm to sleep mode
         host_req_status = (PMU_SLEEP_MODE << 1)| BIT(0);
         hif->hif_ops.hi_bottom_write8(SDIO_FUNC1, RG_SDIO_PMU_HOST_REQ, host_req_status);
     }
@@ -1523,10 +1487,7 @@ int aml_w1_init(void)
     }
 
     func = aml_priv_to_func(SDIO_FUNC7);
-
-#ifndef UBUNTU_PT_MODE
     set_wifi_bt_sdio_driver_bit(AML_W1_WIFI_POWER_ON, WIFI_POWER_CHANGE_SHIFT);
-#endif
 
     tx_status_list_init(&(hif->tx_status_list), WIFI_MAX_TXFRAME*2);
     skb_queue_head_init(&hif->bcn_list_head);
@@ -1545,11 +1506,7 @@ int aml_w1_init(void)
         AML_PRINT_LOG_ERR("not found w1 wifi\n");
         goto create_thread_error;
     }
-
-    ret = aml_sdio_calibration();
-    if (ret != 0)
-        goto create_thread_error;
-
+    aml_sdio_calibration();
     config_pmu_reg(AML_W1_WIFI_POWER_ON);
 
     if ((hal_priv->hal_call_back != NULL)
@@ -1669,9 +1626,7 @@ void aml_w1_exit(void) {
     hal_priv->powersave_init_flag = 1;
     hal_free();
 
-#ifndef UBUNTU_PT_MODE
     set_wifi_bt_sdio_driver_bit(AML_W1_WIFI_POWER_OFF, WIFI_POWER_CHANGE_SHIFT);
-#endif
 
     set_usb_wifi_power(0);
     if (aml_wifi_is_enable_rf_test())
