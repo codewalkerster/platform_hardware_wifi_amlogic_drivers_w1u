@@ -241,7 +241,7 @@ endif
 endif	#CONFIG_AML_CFG80211
 endif 	#CONFIG_CFG80211
 
-ifeq ($(CONFIG_USB_CLOSE),)
+ifneq ($(CONFIG_USB_CLOSE),y)
 EXTRA_CFLAGS += -DCONFIG_USB
 endif
 
