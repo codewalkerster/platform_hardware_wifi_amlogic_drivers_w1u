@@ -292,6 +292,8 @@ void wifi_mac_set_tx_power_accord_rssi(struct wifi_mac *wifimac, unsigned char r
 
 unsigned int wifi_mac_add_work_task(struct wifi_mac *wifimac,
     void *func,void *func_cb, SYS_TYPE param1, SYS_TYPE param2, SYS_TYPE param3, SYS_TYPE param4, SYS_TYPE param5);
+struct hal_work_task * wifi_mac_search_work_task(struct wifi_mac *wifimac,void *func,
+    void *func_cb, SYS_TYPE param1, SYS_TYPE param2,SYS_TYPE param3,SYS_TYPE param4,SYS_TYPE param5);
 
 void wifi_mac_com_ps_set_state(struct wifi_mac *wifimac, enum wifinet_ps_state newstate, int wnet_vif_id);
 void wifi_mac_set_ampduparams(struct wifi_station *sta);
@@ -409,5 +411,6 @@ void wifi_mac_filter_special_data_frame(struct sk_buff *skb, SPECIAL_FRAME_STATU
 extern void cca_thrd_cfg_change_task(SYS_TYPE param1, SYS_TYPE param2,SYS_TYPE param3, SYS_TYPE param4,SYS_TYPE param5);
 void wifi_mac_set_fwlog_ex(SYS_TYPE param1,SYS_TYPE param2,
     SYS_TYPE param3,SYS_TYPE param4,SYS_TYPE param5);
-
+void wifi_mac_get_repair_level(void);
+void wifi_mac_run_delayed_country_switch(struct wifi_mac * wifimac);
 #endif

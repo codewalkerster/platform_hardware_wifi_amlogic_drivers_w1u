@@ -1374,7 +1374,8 @@ static void drv_tx_complete_mgmt_handle(struct drv_private *drv_priv,struct drv_
 
     if (ptxdesc->txdesc_frame_flag == TX_MGMT_DEAUTH && txok
         && sta->sta_wnet_vif->vm_opmode == WIFINET_M_STA) {
-        if (wnet_vif->vm_state != WIFINET_S_SCAN) {
+        if ((wnet_vif->vm_state != WIFINET_S_SCAN)
+            && !wifi_mac_search_work_task(wnet_vif->vm_wmac, wifi_mac_sm_switch, NULL, (SYS_TYPE)wnet_vif, WIFINET_S_SCAN, 0, 0, 0) ) {
             wifi_mac_add_work_task(wnet_vif->vm_wmac, wifi_mac_sm_switch, NULL, (SYS_TYPE)wnet_vif, WIFINET_S_SCAN, 0, 0, 0);
         }
         deauth_fail_time = 0;

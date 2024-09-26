@@ -99,6 +99,7 @@ struct wifi_scan_info;
 #define WIFINET_NODE_SM_PWRSAV_DYN BIT(2)
 #define WIFINET_NODE_RATECHG BIT(3)
 
+#define WIFINET_NODE_MAX_CONNECTING_CNT 3
 struct wifi_sta_statistic
 {
     unsigned int ns_rx_data;

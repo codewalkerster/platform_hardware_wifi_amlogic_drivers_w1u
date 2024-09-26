@@ -1374,7 +1374,7 @@ static void aml_customer_gpio_wlan_ctrl(int onoff)
 
 extern void set_usb_wifi_power(int is_on);
 #ifdef SDIO_BUILD_IN
-static void config_pmu_reg(bool is_power_on)
+static unsigned char config_pmu_reg(bool is_power_on)
 {
     int value_pmu_A12 = 0;
     int value_pmu_A13 = 0;
@@ -1384,11 +1384,7 @@ static void config_pmu_reg(bool is_power_on)
     int value_pmu_A18 = 0;
     int value_pmu_A20 = 0;
     int value_pmu_A22 = 0;
-
-#ifdef UBUNTU_PT_MODE
-    unsigned char count;
-#endif
-
+    unsigned char count = 0;
     unsigned char host_req_status;
     unsigned char wifi_pmu_status;
 
@@ -1396,7 +1392,7 @@ static void config_pmu_reg(bool is_power_on)
     struct hw_interface * hif = hif_get_hw_interface();
 
     wifi_pmu_status = halpriv->hal_ops.hal_get_fw_ps_status();
-    AML_PRINT_LOG_INFO("wifi_pmu_status:0x%x\n", wifi_pmu_status);
+    AML_PRINT_LOG_INFO("%s, wifi_pmu_status:0x%x\n", is_power_on ? "power on start" : "power off start", wifi_pmu_status);
 
     if (is_power_on) {
         host_req_status = 0;
@@ -1416,14 +1412,22 @@ static void config_pmu_reg(bool is_power_on)
         AML_PRINT_LOG_INFO("power on: before write A12=0x%x, A13=0x%x, A14=0x%x, A15=0x%x, A17=0x%x, A18=0x%x, A20=0x%x, A22=0x%x\n",
             value_pmu_A12, value_pmu_A13, value_pmu_A14, value_pmu_A15,value_pmu_A17,value_pmu_A18,value_pmu_A20,value_pmu_A22);
 
-        hif->hif_ops.hi_write_word(RG_PMU_A12, 0x2a2c);
+        /* config the val when recovery*/
+        if (wifi_sdio_access == 0)
+        {
+            hif->hif_ops.hi_write_word(RG_PMU_A12, 0x16a2c);
+        }
+        else
+        {
+            hif->hif_ops.hi_write_word(RG_PMU_A12, 0x2a2c);
+        }
         hif->hif_ops.hi_write_word(RG_PMU_A14, 0x1);
         hif->hif_ops.hi_write_word(RG_PMU_A17, 0x700);
         hif->hif_ops.hi_write_word(RG_PMU_A20, 0x0);
         hif->hif_ops.hi_write_word(RG_PMU_A18, 0x1700);
         hif->hif_ops.hi_write_word(RG_PMU_A22, 0x704);
 
-        host_req_status = (PMU_PWR_OFF << 1)| BIT(0);
+        host_req_status = (PMU_PWR_OFF << 1) | BIT(0);
         hif->hif_ops.hi_bottom_write8(SDIO_FUNC1, RG_SDIO_PMU_HOST_REQ, host_req_status);
 
         host_req_status = 0;
@@ -1432,19 +1436,15 @@ static void config_pmu_reg(bool is_power_on)
 
         wifi_pmu_status = halpriv->hal_ops.hal_get_fw_ps_status();
 
-
-
-        AML_PRINT_LOG_INFO("wifi_pmu_status:0x%x\n", wifi_pmu_status);
+        AML_PRINT_LOG_INFO("power on, wifi_pmu_status:0x%x\n", wifi_pmu_status);
 
         while ((wifi_pmu_status & 0xF) != PMU_ACT_MODE) {
-            AML_PRINT_LOG_INFO("wifi_pmu_status:0x%x\n", wifi_pmu_status);
+            AML_PRINT_LOG_INFO("power on abnormal, wifi_pmu_status:0x%x\n", wifi_pmu_status);
             wifi_pmu_status = halpriv->hal_ops.hal_get_fw_ps_status();
 
-#ifdef UBUNTU_PT_MODE
             if ((wifi_pmu_status == 0x0) && (count++ > 5)) {
-                return ;
+                return 0;
             }
-#endif
         }
 
         value_pmu_A15 = hif->hif_ops.hi_read_word(RG_PMU_A15);
@@ -1454,7 +1454,6 @@ static void config_pmu_reg(bool is_power_on)
         value_pmu_A22 = hif->hif_ops.hi_read_word(RG_PMU_A22);
         AML_PRINT_LOG_INFO("power on: after write A15=0x%x, A17=0x%x, A18=0x%x, A20=0x%x, A22=0x%x\n",
             value_pmu_A15, value_pmu_A17,value_pmu_A18,value_pmu_A20,value_pmu_A22);
-
     } else {
         value_pmu_A12 = hif->hif_ops.hi_read_word(RG_PMU_A12);
         value_pmu_A15 = hif->hif_ops.hi_read_word(RG_PMU_A15);
@@ -1465,13 +1464,22 @@ static void config_pmu_reg(bool is_power_on)
         AML_PRINT_LOG_INFO("power off: before write A12=0x%x, A15=0x%x, A17=0x%x, A18=0x%x, A20=0x%x, A22=0x%x\n",
             value_pmu_A12,value_pmu_A15,value_pmu_A17,value_pmu_A18,value_pmu_A20,value_pmu_A22);
 
-        hif->hif_ops.hi_write_word(RG_PMU_A12, 0x282c); //add set dpll_val(bit16) for sdio resp_timeout
+        /* config the val when recovery, add set dpll_val(bit16) for sdio resp_timeout*/
+        if (wifi_sdio_access == 0)
+        {
+            hif->hif_ops.hi_write_word(RG_PMU_A12, 0xbea2e);
+        }
+        else
+        {
+            hif->hif_ops.hi_write_word(RG_PMU_A12, 0x9ea2e);
+        }
         hif->hif_ops.hi_write_word(RG_PMU_A14, 0x1);
         hif->hif_ops.hi_write_word(RG_PMU_A16, 0x0);
-        hif->hif_ops.hi_write_word(RG_PMU_A17, 0x700);
-        hif->hif_ops.hi_write_word(RG_PMU_A20, 0x0);
-        hif->hif_ops.hi_write_word(RG_PMU_A18, 0x1700);
+        msleep(2);
         hif->hif_ops.hi_write_word(RG_PMU_A22, 0x704);
+        hif->hif_ops.hi_write_word(RG_PMU_A18, 0x1700);
+        hif->hif_ops.hi_write_word(RG_PMU_A20, 0x3ff01ff);
+        hif->hif_ops.hi_write_word(RG_PMU_A17, 0x700);
 
         value_pmu_A12 = hif->hif_ops.hi_read_word(RG_PMU_A12);
         value_pmu_A15 = hif->hif_ops.hi_read_word(RG_PMU_A15);
@@ -1483,9 +1491,11 @@ static void config_pmu_reg(bool is_power_on)
             value_pmu_A12,value_pmu_A15,value_pmu_A17,value_pmu_A18,value_pmu_A20,value_pmu_A22);
 
         //force wifi pmu fsm to sleep mode
-        host_req_status = (PMU_SLEEP_MODE << 1)| BIT(0);
+        host_req_status = (PMU_SLEEP_MODE << 1) | BIT(0);
         hif->hif_ops.hi_bottom_write8(SDIO_FUNC1, RG_SDIO_PMU_HOST_REQ, host_req_status);
     }
+
+    return 1;
 }
 
 extern unsigned char set_wifi_bt_sdio_driver_bit(bool is_register, int shift);
@@ -1590,11 +1600,13 @@ extern unsigned char recovery_done;
 void aml_sdio_disable_wifi(void)
 {
     unsigned char bt_alive = 0;
-    wifi_sdio_access = 0;
-    AML_PRINT_LOG_INFO("wifi_sdio_access:%d, chip_en_access:%d\n", wifi_sdio_access, chip_en_access);
+    unsigned char is_chip_reset = wifi_mac_need_chip_reset();
 
-    //if (chip_en_access) {
-    if (wifi_mac_need_chip_reset()) {
+    wifi_sdio_access = 0;
+    AML_PRINT_LOG_INFO("wifi_sdio_access:%d, chip_en_access:%d, is_chip_reset:%d\n",
+                       wifi_sdio_access, chip_en_access, is_chip_reset);
+
+    if (is_chip_reset) {
         recovery_notify_bt = 1;
         recovery_done = 0;
 
@@ -1642,17 +1654,25 @@ void aml_sdio_disable_wifi(void)
     }
 }
 
-
-
-void aml_sdio_enable_wifi(void)
+unsigned char aml_sdio_enable_wifi(void)
 {
+    unsigned char res;
+
     aml_customer_gpio_wlan_ctrl(WLAN_POWER_ON);
     hal_recovery_init_priv();
-    config_pmu_reg(AML_W1_WIFI_POWER_ON);
-    AML_PRINT_LOG_INFO("aml_sdio_enable_wifi start sdio access %d\n", wifi_sdio_access);
+    res = config_pmu_reg(AML_W1_WIFI_POWER_ON);
+    if (!res)
+    {
+        AML_PRINT_LOG_INFO("enable sdio wifi fail!!!");
+        return 0;
+    }
+
+    AML_PRINT_LOG_INFO("wifi_sdio_access:%d\n", wifi_sdio_access);
     wifi_sdio_access = 1;
     hal_fw_repair();
     recovery_done = 1;
+
+    return 1;
 }
 
 

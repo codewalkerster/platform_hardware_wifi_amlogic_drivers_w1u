@@ -2466,6 +2466,7 @@ void vm_p2p_cancel_remain_channel(struct wifi_mac_p2p *p2p )
 
     if (p2p->wnet_vif->vm_wmac->wm_p2p_connection_protect) {
         p2p->wnet_vif->vm_wmac->wm_p2p_connection_protect = 0;
+        wifi_mac_run_delayed_country_switch(p2p->wnet_vif->vm_wmac);
     }
 }
 

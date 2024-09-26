@@ -77,7 +77,6 @@ ssid_equal(const struct wifi_station *a, const struct wifi_station *b)
             memcmp(a->sta_essid, b->sta_essid, a->sta_esslen) == 0);
 }
 
-extern unsigned char set_gain_allowed;
 static int
 wifi_mac_start_bss_ex(unsigned long arg)
 {
@@ -140,7 +139,7 @@ wifi_mac_start_bss_ex(unsigned long arg)
         wifi_mac_ChangeChannel(wifimac, wnet_vif->vm_curchan, CHANNEL_CONNECT_FLAG | CHANNEL_RESTORE_FLAG, wnet_vif->wnet_vif_id);
 
         is_connect_need_set_gain(wnet_vif);
-        if ((wnet_vif->vm_opmode == WIFINET_M_STA) && set_gain_allowed) {
+        if (wnet_vif->vm_opmode == WIFINET_M_STA) {
             wifi_mac_set_channel_rssi(wifimac, (unsigned char)(wnet_vif->vm_mainsta->sta_avg_bcn_rssi));
         }
 

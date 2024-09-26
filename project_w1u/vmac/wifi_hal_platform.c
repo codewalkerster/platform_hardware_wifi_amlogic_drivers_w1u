@@ -1186,11 +1186,12 @@ void aml_disable_wifi(void)
 #endif
 }
 
-void aml_enable_wifi(void)
+unsigned char aml_enable_wifi(void)
 {
     struct hal_private *hal_priv = hal_get_priv();
+    unsigned char res;
 
-    AML_PRINT_LOG_INFO("aml_enable_wifi start\n");
+    AML_PRINT_LOG_INFO("start\n");
     if (aml_bus_type == 1) {
 #ifdef CONFIG_USB
         aml_usb_enable_wifi();
@@ -1198,7 +1199,12 @@ void aml_enable_wifi(void)
     }
 #ifdef SDIO_MODE_ON
     else if (aml_bus_type == 0) {
-        aml_sdio_enable_wifi();
+        res = aml_sdio_enable_wifi();
+        if (!res)
+        {
+            AML_PRINT_LOG_INFO("enable wifi fail!!!");
+            return 0;
+        }
     }
 #endif
     hal_priv->txcompletestatus->txdoneframecounter = 0;
@@ -1207,7 +1213,9 @@ void aml_enable_wifi(void)
     hal_priv->HalTxPageDoneCounter = 0;
     hal_priv->powersave_init_flag = 0;
 
-    AML_PRINT_LOG_INFO("aml_enable_wifi end\n");
+    AML_PRINT_LOG_INFO("end\n");
+
+    return 1;
 }
 
 void _aml_rmmod(void)

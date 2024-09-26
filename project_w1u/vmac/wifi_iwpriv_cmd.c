@@ -470,7 +470,7 @@ err:
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
     set_fs(fs);
 #else
-    AML_PRINT_LOG_ERR("err exit\n");
+    AML_PRINT_LOG_ERR("File operation err exit\n");
 #endif
 #else
         AML_PRINT_LOG_ERR("Android forbid open and write files\n");

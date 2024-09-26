@@ -258,7 +258,7 @@ union vendor_if
  }
 
 #define CHAN2G(_channel, _freq, _flags) {           \
-                .band           = IEEE80211_BAND_2GHZ,      \
+                .band           = (enum nl80211_band)IEEE80211_BAND_2GHZ,      \
                 .center_freq        = (_freq),          \
                 .hw_value       = (_channel),           \
                 .flags          = (_flags),         \
@@ -267,7 +267,7 @@ union vendor_if
 }
 
 #define CHAN5G(_channel, _flags) {              \
-                .band           = IEEE80211_BAND_5GHZ,      \
+                .band           = (enum nl80211_band)IEEE80211_BAND_5GHZ,      \
                 .center_freq        = 5000 + (5 * (_channel)),  \
                 .hw_value       = (_channel),           \
                 .flags          = (_flags),         \

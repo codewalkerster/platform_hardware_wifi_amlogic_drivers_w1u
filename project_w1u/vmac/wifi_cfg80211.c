@@ -308,7 +308,7 @@ aml_spt_band_alloc (enum ieee80211_band band)
                         + sizeof(struct ieee80211_supported_band));
     spt_band->bitrates= (struct ieee80211_rate*)(((unsigned char*)spt_band->channels)
                         + sizeof(struct ieee80211_channel)*n_channels);
-    spt_band->band = band;
+    spt_band->band = (enum nl80211_band)band;
     spt_band->n_channels = n_channels;
     spt_band->n_bitrates = n_bitrates;
 
@@ -2006,6 +2006,7 @@ vm_cfg80211_scan(struct wiphy *wiphy, struct cfg80211_scan_request *request)
     if ((wnet_vif->vm_p2p_support == 0) && wifimac->wm_p2p_connection_protect) {
         if (time_after(jiffies, wifimac->wm_p2p_connection_protect_period)) {
             wifimac->wm_p2p_connection_protect = 0;
+            wifi_mac_run_delayed_country_switch(wifimac);
 
         } else {
             AML_PRINT_LOG_ERR("rejected scan due to p2p negotiation\n");
@@ -3149,6 +3150,7 @@ static int vm_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
     wnet_vif->vm_mainsta->connect_status = CONNECT_IDLE;
     pwdev_priv->connect_request = sme;
     os_timer_ex_start(&pwdev_priv->connect_timeout);
+    wnet_vif->vm_connecting_retry_cnt = 0;
     OS_SPIN_UNLOCK_IRQ(&pwdev_priv->connect_req_lock,pwdev_priv->connect_req_lock_flags);
 
 exit:
@@ -3199,11 +3201,8 @@ vm_cfg80211_disconnect(struct wiphy *wiphy,
 
             if ((wifimac->wm_recovery_flags & WIFINET_RECOVERY_F_RUNNING)
                 && (wnet_vif->vm_recovery_state == WIFINET_RECOVERY_VIF_UP))  {
-                if (wifi_mac_vif_restore_end(wnet_vif) == 0) {
-                    struct vm_wdev_priv *pwdev_priv = wdev_to_priv(wnet_vif->vm_wdev);
-                    os_timer_ex_cancel(&pwdev_priv->connect_timeout, CANCEL_SLEEP);
+                    vm_cfg80211_connect_timeout_timer(wnet_vif);
                     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_WARN,"recovery is in process !\n");
-                }
             }
 
         }
@@ -4360,11 +4359,19 @@ static int vm_cfg80211_start_ap(struct wiphy *wiphy, struct net_device *ndev,
     return ret;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)
+static int vm_cfg80211_change_beacon(struct wiphy *wiphy,
+    struct net_device *ndev, struct cfg80211_ap_update *ap_update)
+#else
 static int vm_cfg80211_change_beacon(struct wiphy *wiphy,
     struct net_device *ndev, struct cfg80211_beacon_data *info)
+#endif
 {
     int ret = 0,time_delay = 0;
     struct wlan_net_vif *wnet_vif = wiphy_to_adapter(wiphy);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)
+    struct cfg80211_beacon_data *info = &ap_update->beacon;
+#endif
 
     while ((wnet_vif->vm_wmac->wm_flags & WIFINET_F_CHANSWITCH) && (time_delay < 1000)) {
         msleep(10);

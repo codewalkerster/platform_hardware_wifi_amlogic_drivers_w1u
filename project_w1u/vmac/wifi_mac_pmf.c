@@ -329,8 +329,12 @@ int wifi_mac_unprotected_mgmt_pkt_handle(struct wifi_station *sta, struct sk_buf
                 if (!(sta->sta_flags_ext & WIFINET_NODE_MFP_CONFIRM_DEAUTH)) {
                     reason = le16toh(*(unsigned short *)frm);
                     AML_PRINT_LOG_INFO("recv deauthenticate (reason %d)\n", reason);
-
-                    wifi_mac_send_sa_query(sta, WIFINET_ACTION_SA_QUERY_REQ, sta->sa_query_seq++);
+                    if (sta->sta_wmac->wm_suspend_mode == WIFI_SUSPEND_STATE_NONE) {
+                        wifi_mac_send_sa_query(sta, WIFINET_ACTION_SA_QUERY_REQ, sta->sa_query_seq++);
+                    }
+                    else {
+                        AML_PRINT_LOG_WRAN("wait 100ms resume complete\n");
+                    }
                     os_timer_ex_start_period(&wnet_vif->vm_actsend, 100);
                     sta->sta_flags_ext |= WIFINET_NODE_MFP_CONFIRM_DEAUTH;
                 }
@@ -373,7 +377,12 @@ int wifi_mac_unprotected_mgmt_pkt_handle(struct wifi_station *sta, struct sk_buf
 
             if (!(remote_sta->sta_flags_ext & WIFINET_NODE_MFP_CONFIRM_DEAUTH)) {
                 remote_sta->sta_flags_ext |= WIFINET_NODE_MFP_CONFIRM_DEAUTH;
-                wifi_mac_send_sa_query(remote_sta, WIFINET_ACTION_SA_QUERY_REQ, remote_sta->sa_query_seq++);
+                if (sta->sta_wmac->wm_suspend_mode == WIFI_SUSPEND_STATE_NONE) {
+                    wifi_mac_send_sa_query(remote_sta, WIFINET_ACTION_SA_QUERY_REQ, remote_sta->sa_query_seq++);
+                }
+                else {
+                    AML_PRINT_LOG_WRAN("wait 100ms resume complete\n");
+                }
                 os_timer_ex_start_period(&wnet_vif->vm_actsend, 100);
             }
             break;

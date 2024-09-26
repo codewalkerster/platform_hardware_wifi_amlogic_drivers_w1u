@@ -293,7 +293,59 @@ int check_ht_rate(struct wlan_net_vif *wnet_vif, const struct wifi_scan_info *sc
     return 1;
 }
 
+int wifi_mac_check_ht_rate_assoc_resp(struct wlan_net_vif *wnet_vif, const struct wifi_mac_scan_param *scan_ptr)
+{
+    int i, j, k;
+    struct wifi_mac *wifimac = wnet_vif->vm_wmac;
+    struct wifi_mac_rateset *srs;
+    struct wifi_mac_rateset rrs;
+    struct wifi_mac_ie_htcap_cmn *htcap;
+    struct wifi_mac_ie_htinfo_cmn *htinfo;
 
+    k = 0;
+    srs = &wifimac->wm_sup_ht_rates;
+    memset(&rrs, 0, sizeof(rrs));
+
+    if ((scan_ptr->htcap[1] != 0) && (scan_ptr->htinfo[1] != 0)) {
+        htcap = &((struct wifi_mac_ie_htcap *)scan_ptr->htcap)->hc_ie;
+        htinfo = &((struct wifi_mac_ie_htinfo *)scan_ptr->htinfo)->hi_ie;
+
+        /* only support Spatial Stream 1 (mcs 0~7)*/
+        for (i = 0; i < 8; i++) {
+            if (htcap->hc_mcsset[i / 8] & (1 << (i % 8))) {
+                rrs.dot11_rate[k++] = i | ((htinfo->hi_basicmcsset[i/8] & (1 << (i%8))) ? WIFINET_RATE_BASIC : 0);
+            }
+
+            if (k == WIFINET_RATE_MAXSIZE) {
+                break;
+            }
+        }
+    }
+    rrs.dot11_rate_num = k;
+
+    if (rrs.dot11_rate_num == 0) {
+        AML_PRINT(AML_LOG_ID_RATE, AML_LOG_LEVEL_ERROR,"support rate num:%d error\n", rrs.dot11_rate_num);
+        return 0;
+    }
+
+    for (i = 0; i < rrs.dot11_rate_num; i++) {
+        if (rrs.dot11_rate[i] & WIFINET_RATE_BASIC) {
+            for (j = 0; j < srs->dot11_rate_num; j++) {
+                if (WIFINET_GET_RATE_VAL(rrs.dot11_rate[i]) == WIFINET_GET_RATE_VAL(srs->dot11_rate[j])) {
+                    break;
+                }
+            }
+
+            if (j == srs->dot11_rate_num) {
+                AML_PRINT(AML_LOG_ID_RATE, AML_LOG_LEVEL_ERROR,"error\n");
+                return 0;
+            }
+        }
+    }
+
+    return 1;
+
+}
 int wifi_mac_setup_rates(struct wifi_station *sta, const unsigned char *rates, const unsigned char *xrates, int flags)
 {
     struct wifi_mac_rateset *rs = &sta->sta_rates;

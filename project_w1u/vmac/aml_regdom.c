@@ -284,7 +284,7 @@ void aml_copy_regd(const struct ieee80211_regdomain *regd, struct ieee80211_regd
 
 void aml_regd_notify(struct wiphy *wiphy, char *alpha2)
 {
-    struct ieee80211_regdomain *regd = NULL;
+    const struct ieee80211_regdomain *regd = NULL;
     struct ieee80211_regdomain *regd_copy = NULL;
     unsigned int regd_len = 0;
 

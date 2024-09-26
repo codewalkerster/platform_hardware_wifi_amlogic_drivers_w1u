@@ -282,6 +282,7 @@ clean:
 	rm -rf ./aml_bus/*.o ./aml_bus/.*.cmd ./aml_bus/.*.o.d ./aml_bus/*.o.symversions
 	rm -rf ./linux/*.o ./linux/.*.cmd ./linux/.*.o.d ./linux/*.o.symversions
 	rm -rf ./crypto/*.o ./crypto/.*.cmd
+	rm -rf ./print_version.c
 
 depend .depend dep:
 	$(CC) $(EXTRA_CFLAGS) -M *.c > .depend

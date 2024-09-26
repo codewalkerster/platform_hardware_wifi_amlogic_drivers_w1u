@@ -135,7 +135,9 @@ unsigned int phy_set_param_cmd(unsigned char cmd,unsigned char vid,unsigned int 
 #endif
 
     if (cmd == Power_Save_Cmd)
+    {
         hal_priv->hal_call_back->drv_pwrsave_wake_req(hal_priv->drv_priv, 0);
+    }
     DBG_EXIT();
     return 1;
 }
@@ -1340,17 +1342,32 @@ int phy_set_suspend(unsigned char vid, unsigned char enable,
             AML_PRINT_LOG_INFO("txdoneframecounter:%x, HalTxFrameDoneCounter:%x\n",
                 hal_priv->txcompletestatus->txdoneframecounter, hal_priv->HalTxFrameDoneCounter);
         }
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && !defined (LINUX_PLATFORM)
         if ((hif->HiStatus.Tx_Free_num != hif->HiStatus.Tx_Send_num)
             || (hif->HiStatus.Tx_Done_num != hif->HiStatus.Tx_Send_num))
+#else
+        if ((atomic_read(&hif->HiStatus.Tx_Free_num) != atomic_read(&hif->HiStatus.Tx_Send_num))
+            || (atomic_read(&hif->HiStatus.Tx_Done_num) != atomic_read(&hif->HiStatus.Tx_Send_num)))
+#endif
         {
             AML_PRINT_LOG_INFO("free:%d, done:%d, send:%d\n",
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && !defined (LINUX_PLATFORM)
                 hif->HiStatus.Tx_Free_num, hif->HiStatus.Tx_Done_num, hif->HiStatus.Tx_Send_num);
+#else
+                atomic_read(&hif->HiStatus.Tx_Free_num),
+                atomic_read(&hif->HiStatus.Tx_Done_num),
+                atomic_read(&hif->HiStatus.Tx_Send_num));
+#endif
         }
         /* flush packetes when suspend and when resume restore initial value */
         hal_priv->HalTxFrameDoneCounter = hal_priv->txcompletestatus->txdoneframecounter;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && !defined (LINUX_PLATFORM)
         hif->HiStatus.Tx_Free_num = hif->HiStatus.Tx_Send_num;
         hif->HiStatus.Tx_Done_num = hif->HiStatus.Tx_Send_num;
+#else
+        atomic_set(&hif->HiStatus.Tx_Free_num, atomic_read(&hif->HiStatus.Tx_Send_num));
+        atomic_set(&hif->HiStatus.Tx_Done_num, atomic_read(&hif->HiStatus.Tx_Send_num));
+#endif
     }
 
     AML_PRINT_LOG_INFO("%s end, enable:%d, mode:%d, vid:%d, filter:0x%x, ret:%d, powersave_init_flag:%d\n",
@@ -1970,6 +1987,8 @@ void set_coex_wf_zgb_mode(char mode)
     coex_wf_zgb_mode_param.Cmd = COEX_WF_ZGB_MODE_CMD;
     coex_wf_zgb_mode_param.coex_work_mode = mode;
     temp_a = (mode & 0x7) == 0 || (mode & 0x7) == 0x1;
+
+
     temp_b = (mode & 0x38) == 0 || (mode & 0x38) == 0x8 || (mode & 0x38) == 0x10 || (mode & 0x38) == 0x18 || (mode & 0x38) == 0x20;
     if (!temp_a || !temp_b)
     {
@@ -2476,7 +2495,7 @@ int aml_send_me_shutdown(void)
     int count = 0;
     bool msg_recv;
     unsigned int value;
-    struct hw_interface* hif =hif_get_hw_interface();
+    struct hw_interface* hif = hif_get_hw_interface();
 
     //send shutdown_msg to fw
     ret = phy_set_param_cmd(HOST_SHUTDOWN_REQ, 0, 0);
@@ -2490,12 +2509,12 @@ int aml_send_me_shutdown(void)
         }
         OS_SLEEP(10);
         if (count++ > 100) {
-            printk("%s %d, ERROR wait shutdown_ind timeout:%d \n",
-                 __func__, __LINE__, msg_recv );
+            AML_PRINT_LOG_ERR("wait shutdown indication timeout, rg_aon_a56:0x%08x\n", value);
             return ret;
         }
-    }while (!msg_recv);
-    printk("%s %d, shutdown_msg_send_ok! \n",__func__, __LINE__);
+    } while (!msg_recv);
+
+    AML_PRINT_LOG_INFO("send host_shutdown_req ok, count:%d\n", count);
 
     return ret;
 }

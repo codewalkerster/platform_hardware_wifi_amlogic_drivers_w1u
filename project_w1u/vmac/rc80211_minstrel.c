@@ -498,10 +498,10 @@ static void calc_rate_durations(enum nl80211_band band, struct minstrel_rate *d,
     //int shift = ieee80211_chandef_get_shift(chandef);
     int shift = 0;
 
-    d->perfect_tx_time = ieee80211_frame_duration(band, 1200,
+    d->perfect_tx_time = ieee80211_frame_duration((enum ieee80211_band)band, 1200,
         DIV_ROUND_UP(rate->bitrate, 1 << shift), erp, 1, shift);
 
-    d->ack_time = ieee80211_frame_duration(band, 10,
+    d->ack_time = ieee80211_frame_duration((enum ieee80211_band)band, 10,
         DIV_ROUND_UP(rate->bitrate, 1 << shift), erp, 1, shift);
 }
 
@@ -516,7 +516,7 @@ init_sample_table(struct minstrel_sta_info *mi)
 	memset(mi->sample_table, 0xff, SAMPLE_COLUMNS * mi->n_rates);
 
 	for (col = 0; col < SAMPLE_COLUMNS; col++) {
-		prandom_bytes(rnd, sizeof(rnd));
+		get_random_bytes(rnd, sizeof(rnd));
 		for (i = 0; i < mi->n_rates; i++) {
 			new_idx = (i + rnd[i & 7]) % mi->n_rates;
 			while (SAMPLE_TBL(mi, new_idx, col) != 0xff)
@@ -548,7 +548,7 @@ static void minstrel_rate_init(void *priv, struct ieee80211_supported_band *sban
 	mi->sta = sta;
 	mi->lowest_rix = rate_lowest_index_aml(sband, sta);
 	ctl_rate = &sband->bitrates[mi->lowest_rix];
-	mi->sp_ack_dur = ieee80211_frame_duration(sband->band, 10,
+	mi->sp_ack_dur = ieee80211_frame_duration((enum ieee80211_band)sband->band, 10,
 		ctl_rate->bitrate, !!(ctl_rate->flags & IEEE80211_RATE_ERP_G), 1, 0);
 
 	//rate_flags = ieee80211_chandef_rate_flags(&mp->hw->conf.chandef);

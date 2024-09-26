@@ -1254,8 +1254,11 @@ void wifi_mac_scan_channel(struct wifi_mac *wifimac)
                AML_PRINT_LOG_INFO("scan the connected chan no need to restore\n");
         }
          else {
-             ss->scan_StateFlags |= SCANSTATE_F_RESTORE;
-             ss->scan_StateFlags &= ~SCANSTATE_F_TX_DONE;
+            ss->scan_StateFlags |= SCANSTATE_F_RESTORE;
+            ss->scan_StateFlags &= ~SCANSTATE_F_TX_DONE;
+            if ((wnet_vif->vm_opmode == WIFINET_M_STA) && (wnet_vif->vm_state == WIFINET_S_CONNECTED)) {
+                wifi_mac_scan_set_gain(wifimac, wnet_vif->vm_scanchan_rssi);
+            }
          }
     }
 
@@ -1329,7 +1332,9 @@ void wifi_mac_switch_scan_channel(struct wifi_mac *wifimac)
 
     ss->scan_StateFlags &= ~SCANSTATE_F_NOTIFY_AP;
     chan = ss->ss_chans[ss->scan_next_chan_index];
-    if ((wifimac->wm_curchan != NULL) && (chan->chan_pri_num == wifimac->wm_curchan->chan_pri_num)) {
+    if ((wifimac->wm_curchan != NULL)
+        && (chan->chan_pri_num == wifimac->wm_curchan->chan_pri_num)
+        && (wnet_vif->vm_recovery_state == WIFINET_RECOVERY_END)) {
         ss->scan_StateFlags |= SCANSTATE_F_CHANNEL_SWITCH_COMPLETE;
         wifi_mac_scan_channel(wifimac);
     } else {
@@ -1833,6 +1838,7 @@ void wifi_mac_end_scan( struct wifi_mac_scan_state *ss)
     ss->ss_nssid = 0;
     memset(ss->ss_ssid,0,sizeof(ss->ss_ssid));
     wifi_mac_scan_access(wnet_vif);
+    wifi_mac_run_delayed_country_switch(wifimac);
 
     if (wnet_vif->vm_chan_switch_scan_flag) {
         wifi_mac_check_switch_chan_result(wnet_vif);
@@ -2145,7 +2151,9 @@ int wifi_mac_start_scan(struct wlan_net_vif *wnet_vif, int flags,
             wifi_mac_get_channel_rssi_before_scan(wifimac, &wnet_vif->vm_scanchan_rssi);
         }
 
-        wifi_mac_scan_set_gain(wifimac, wnet_vif->vm_scanchan_rssi);
+        if (wnet_vif->vm_state != WIFINET_S_CONNECTED) {
+            wifi_mac_scan_set_gain(wifimac, wnet_vif->vm_scanchan_rssi);
+        }
     }
 
     ss->scan_CfgFlags |= (flags & WIFINET_SCANCFG_MASK);

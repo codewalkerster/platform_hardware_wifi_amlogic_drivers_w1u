@@ -813,7 +813,11 @@ const struct aml_proc_hdl drv_proc_hdls[] = {
 static int aml_drv_proc_open(struct inode *inode, struct file *file)
 {
     /* struct net_device *dev = proc_get_parent_data(inode); */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,16,0)
     ssize_t index = (ssize_t)PDE_DATA(inode);
+#else
+    ssize_t index = (ssize_t)pde_data(inode);
+#endif
     const struct aml_proc_hdl *hdl = drv_proc_hdls + index;
     void *private = NULL;
 

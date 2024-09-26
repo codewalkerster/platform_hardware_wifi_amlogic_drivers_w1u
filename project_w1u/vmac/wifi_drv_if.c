@@ -431,6 +431,53 @@ int drv_hal_add_workitem(WorkHandler task, WorkHandler taskcallback, SYS_TYPE pa
     return 0;
 }
 
+struct hal_work_task * drv_hal_search_workitem(WorkHandler task, WorkHandler taskcallback, SYS_TYPE param1,
+    SYS_TYPE param2, SYS_TYPE param3, SYS_TYPE param4, SYS_TYPE param5)
+{
+    unsigned char i = 0;
+    unsigned char Idx = 0;
+    unsigned char workite_num = 0;
+    unsigned char *EltPtr = NULL;
+    struct hal_work_task *pWorkTask = NULL;
+    struct hal_work_task *ReturnTask = NULL;
+    struct hal_private* hal_priv = hal_get_priv();
+    struct _CO_SHARED_FIFO *pWorkFifo = &hal_priv->WorkFifo;
+
+    Idx = pWorkFifo->IdxTab[CO_WORK_GET].In;
+
+    if (pWorkFifo->IdxTab[CO_WORK_GET].Out >= Idx) {
+        workite_num = pWorkFifo->IdxTab[CO_WORK_GET].Out - Idx;
+    } else {
+        workite_num = pWorkFifo->EltNbr + pWorkFifo->IdxTab[CO_WORK_GET].Out - Idx;
+    }
+
+    AML_PRINT(AML_LOG_ID_HAL,AML_LOG_LEVEL_DEBUG,"in:%d, out:%d, workitem_num:%d\n",Idx, pWorkFifo->IdxTab[CO_WORK_GET].Out,workite_num);
+
+    for (i = 1; i <= workite_num; i++) {
+        Idx += i;
+
+        if (Idx > pWorkFifo->EltNbr) {
+            Idx = Idx - pWorkFifo->EltNbr;
+        }
+
+        EltPtr = (unsigned char*)((unsigned long)(pWorkFifo->EltBasePtr) + (unsigned long)(Idx * pWorkFifo->EltSize));
+        pWorkTask = ( struct hal_work_task *)EltPtr;
+
+        if ((pWorkTask->task == task)
+            && (pWorkTask->param1 == param1)
+            && (pWorkTask->param2 == param2)
+            && (pWorkTask->param3 == param3)
+            && (pWorkTask->param4 == param4)
+            && (pWorkTask->param5 == param5)
+            && (pWorkTask->taskcallback == taskcallback)) {
+                ReturnTask = pWorkTask;
+                break;
+            }
+    }
+
+    return ReturnTask;
+}
+
 int drv_hal_workitem_initial(void)
 {
     struct hal_private* hal_priv = hal_get_priv();

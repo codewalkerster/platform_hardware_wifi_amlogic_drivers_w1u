@@ -519,6 +519,8 @@ int drv_hal_workitem_initial(void);
 void drv_hal_workitem_free(void);
 int drv_hal_add_workitem(WorkHandler task, WorkHandler taskcallback, SYS_TYPE param1,
     SYS_TYPE param2, SYS_TYPE param3, SYS_TYPE param4, SYS_TYPE param5);
+struct hal_work_task * drv_hal_search_workitem(WorkHandler task, WorkHandler taskcallback,
+    SYS_TYPE param1, SYS_TYPE param2, SYS_TYPE param3, SYS_TYPE param4, SYS_TYPE param5);
 void drv_hal_attach( void *drv_priv, void *cbptr);
 unsigned char drv_hal_workitem_is_working(void);
 #endif //_DRV2HAL_IF_H_

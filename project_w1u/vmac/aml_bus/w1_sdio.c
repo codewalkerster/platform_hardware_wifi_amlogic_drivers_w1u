@@ -5,6 +5,7 @@
 #include "wifi_w1_drv_reg_ops.h"
 #include "rf_d_top_reg.h"
 #include "wifi_coex_addr.h"
+#include "wifi_aon_addr.h"
 
 #ifdef SDIO_MODE_ON
 #include "w1_sdio.h"
@@ -319,8 +320,8 @@ int aml_w1_sdio_bottom_read(unsigned char func_num, int addr, void *buf, size_t 
     }
     {
         unsigned char fw_st = aml_w1_sdio_bottom_read8(SDIO_FUNC1, 0x23c) & 0xF;
-        if (fw_st != 6)
-            printk("%s:%d, BUG! fw_st %x, func_num %x, addr %x \n", __func__, __LINE__, fw_st, func_num, addr);
+        if (fw_st != PMU_ACT_MODE)
+            printk("%s:%d, BUG! fw_st %x, func_num %x, addr %x\n", __func__, __LINE__, fw_st, func_num, addr);
     }
     AML_W1_BT_WIFI_MUTEX_ON();
     /* read block mode */
@@ -839,6 +840,7 @@ void aml_w1_sdio_init_ops(void)
     // check and wake w1 firstly.
     host_wake_req = NULL;
     host_suspend_req = NULL;
+    host_resume_req = NULL;
 }
 int aml_sdio_probe(struct sdio_func *func, const struct sdio_device_id *id)
 {
@@ -1347,9 +1349,13 @@ int  aml_sdio_init(void)
 void  aml_sdio_exit(void)
 {
     printk("aml_sdio_exit++ \n");
-    sdio_unregister_driver(&aml_sdio_driver);
-    g_sdio_driver_insmoded = 0;
-    g_sdio_after_porbe = 0;
+
+    if (g_sdio_driver_insmoded) {
+        sdio_unregister_driver(&aml_sdio_driver);
+        g_sdio_driver_insmoded = 0;
+        g_sdio_after_porbe = 0;
+    }
+
     printk("*****************aml sdio common driver is rmmoded********************\n");
 }
 

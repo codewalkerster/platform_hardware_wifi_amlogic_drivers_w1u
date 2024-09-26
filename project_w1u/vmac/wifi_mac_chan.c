@@ -2302,10 +2302,10 @@ void wifi_mac_restore_wnet_vif_channel(struct wlan_net_vif *wnet_vif)
             selected_wnet_vif = drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC];
 
         } else {
-            selected_wnet_vif = drv_priv->drv_wnet_vif_table[NET80211_P2P_VMAC];
+            selected_wnet_vif = drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC];
 
-            if (selected_wnet_vif->vm_curchan->chan_bw < drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC]->vm_curchan->chan_bw) {
-                selected_wnet_vif = drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC];
+            if (selected_wnet_vif->vm_curchan->chan_bw < drv_priv->drv_wnet_vif_table[NET80211_P2P_VMAC]->vm_curchan->chan_bw) {
+                selected_wnet_vif = drv_priv->drv_wnet_vif_table[NET80211_P2P_VMAC];
             }
         }
     #endif

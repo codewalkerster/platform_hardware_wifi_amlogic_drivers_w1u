@@ -123,6 +123,51 @@ void drv_forward_tasklet(unsigned long arg)
     wifi_mac_forward_data(wnet_vif);
 }
 
+void wifi_mac_stat_beacon(struct wlan_net_vif *wnet_vif, struct wifi_frame *wh, struct wifi_mac_rx_status *rs)
+{
+    struct wifi_mac *wifimac = wnet_vif->vm_wmac;
+    static unsigned char bssid_list[6][6] = {0};
+    static unsigned char bssid_map = 0;
+    static unsigned long bssid_list_stamp = 0;
+    unsigned char last_set_gain = 0;
+    unsigned char *bssid = &wh->i_addr2[0];
+    unsigned char ret = 1, i;
+
+    if (rs->rs_rssi > 186) {
+        if (memcmp(bssid, wnet_vif->vm_mainsta->sta_bssid, 6)) {
+            for (i=0; i<6; i++) {
+                if ((bssid_map & (1<<i))) {
+                    ret = memcmp(bssid_list[i], bssid, 6);
+                    if (ret == 0)
+                        break;
+                }
+            }
+            if (ret) {
+                for (i=0; i<6; i++) {
+                    if ((bssid_map & (1<<i)) == 0) {
+                        memcpy(bssid_list[i], bssid, 6);
+                        bssid_map |= (1<<i);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if (bssid_list_stamp + HZ*3 < jiffies) {
+        last_set_gain = wifimac->is_connect_set_gain;
+        if (bssid_map >= 3)
+            wifimac->is_connect_set_gain = 1;
+        else
+            wifimac->is_connect_set_gain = 0;
+
+        if (last_set_gain != wifimac->is_connect_set_gain)
+            wifimac->force_set_gain = 1;
+
+        bssid_map = 0;
+        memset(bssid_list, 0, 6*6);
+        bssid_list_stamp = jiffies;
+    }
+}
 
 int wifi_mac_input(void *station, struct sk_buff *skb, struct wifi_mac_rx_status *rs)
 {
@@ -195,6 +240,9 @@ int wifi_mac_input(void *station, struct sk_buff *skb, struct wifi_mac_rx_status
         {
             case WIFINET_M_STA:
                 bssid = wh->i_addr2;
+                if (WIFINET_IS_BEACON(wh)) {
+                    wifi_mac_stat_beacon(wnet_vif, wh, rs);
+                }
                 if (!WIFINET_ADDR_EQ(bssid, sta->sta_bssid))
                 {
                     WIFINET_DPRINTF( AML_LOG_ID_RECV, AML_LOG_LEVEL_DEBUG, "%s,%s,%x%x\n", "not to bss",ether_sprintf(bssid),wh->i_fc[0],wh->i_fc[1]);
@@ -666,6 +714,10 @@ int wifi_mac_input_all(struct wifi_mac *wifimac, struct sk_buff *skb, struct wif
         }
 
         if (multicast) {
+            if ((wnet_vif->vm_opmode == WIFINET_M_STA) && (wnet_vif->vm_state == WIFINET_S_CONNECTED)
+                && WIFINET_IS_BEACON(wh) && !(wifimac->wm_flags & WIFINET_F_SCAN)) {
+                wifi_mac_stat_beacon(wnet_vif, wh, rs);
+            }
             if (((wnet_vif->vm_opmode == WIFINET_M_STA) || (wnet_vif->vm_opmode == WIFINET_M_P2P_CLIENT))
                 && (wnet_vif->vm_state == WIFINET_S_CONNECTED) && !(wifimac->wm_flags & WIFINET_F_SCAN)
                 && memcmp(bssid, wnet_vif->vm_mainsta->sta_bssid, WIFINET_ADDR_LEN)) {
@@ -3826,6 +3878,7 @@ void wifi_mac_status_code_handle(struct wifi_station *sta, unsigned char subtype
     if ((WIFINET_STATUS_INVALID_PMKID == scan->status_code)
         && (sta->sta_rsn.rsn_keymgmtset & (1 << RSN_ASE_8021X_SAE))
         && (sta->sta_authmode == WIFINET_AUTH_OPEN)) {
+        wnet_vif->vm_connecting_retry_cnt++;
         os_timer_ex_cancel(&wnet_vif->vm_mgtsend, CANCEL_SLEEP);
         aml_del_pmksa_by_index(wnet_vif, sta->sta_bssid);
         sta->sta_authmode = WIFINET_AUTH_SAE;
@@ -3837,9 +3890,15 @@ void wifi_mac_status_code_handle(struct wifi_station *sta, unsigned char subtype
         if (WIFINET_STATUS_ALG == scan->status_code) {
             wnet_vif->vm_mainsta->sta_authmode = WIFINET_AUTH_SHARED;
         }
-
     } else if (WIFINET_FC0_SUBTYPE_ASSOC_RESP == subtype) {
+        wnet_vif->vm_connecting_retry_cnt++;
         os_timer_ex_cancel(&wnet_vif->vm_mgtsend, CANCEL_SLEEP);
+        if (scan->status_code == WIFINET_STATUS_BASIC_RATE) {
+            if (scan->htcap[1] != 0 && !wifi_mac_check_ht_rate_assoc_resp(wnet_vif, scan)) {
+                AML_PRINT_LOG_ERR("rate info not correct state to scan, please check 11ax only ap?\n");
+            }
+        }
+
         if (WIFINET_STATUS_REFUSED_TEMPORARILY == scan->status_code) {
             if (scan->timeout_ie != NULL) {
                 timeout = wifi_mac_parse_timeout_ie(sta, scan->timeout_ie);
@@ -3850,7 +3909,7 @@ void wifi_mac_status_code_handle(struct wifi_station *sta, unsigned char subtype
             return;
         }
 
-        wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN,0);
+        wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
     }
 
     return;
@@ -4438,6 +4497,7 @@ void wifi_mac_recv_assoc_rsp(struct wlan_net_vif *wnet_vif,
     struct wifi_mac_scan_param scan = {0};
     unsigned char qosinfo;
     struct drv_private *drv_priv = drv_get_drv_priv();
+
 
     wh = (struct wifi_frame *) os_skb_data(skb);
 

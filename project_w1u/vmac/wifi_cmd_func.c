@@ -626,7 +626,14 @@ void wifi_mac_set_country_regdom_task(SYS_TYPE param1, SYS_TYPE param2, SYS_TYPE
         return;
     }
 
-    preempt_scan(selected_wnet_vif->vm_ndev, 100, 100);
+    if (preempt_scan(selected_wnet_vif->vm_ndev, 100, 100) != 0) {
+        AML_PRINT_LOG_INFO("delay country switch: target country %s\n", alpha);
+        wifimac->wm_alpha_pending = 1;
+        wifimac->wm_alpha_target[0] = alpha[0];
+        wifimac->wm_alpha_target[1] = alpha[1];
+        wifimac->wm_alpha_target[2] = '\0';
+        return;
+    }
 
     WIFI_CHANNEL_LOCK(wifimac);
 

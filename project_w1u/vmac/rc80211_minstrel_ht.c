@@ -1140,8 +1140,8 @@ minstrel_ht_update_caps(void *priv, struct ieee80211_supported_band *sband,
 	mi->sta = sta;
 	mi->last_stats_update = jiffies;
 
-	ack_dur = ieee80211_frame_duration(sband->band, 10, 60, 1, 1, 0);
-	mi->overhead = ieee80211_frame_duration(sband->band, 0, 60, 1, 1, 0);
+	ack_dur = ieee80211_frame_duration((enum ieee80211_band)sband->band, 10, 60, 1, 1, 0);
+	mi->overhead = ieee80211_frame_duration((enum ieee80211_band)sband->band, 0, 60, 1, 1, 0);
 	mi->overhead += ack_dur;
 	mi->overhead_rtscts = mi->overhead + 2 * ack_dur;
 
@@ -1383,7 +1383,7 @@ static void  init_sample_table(void)
 
     memset(sample_table, 0xff, sizeof(sample_table));
     for (col = 0; col < SAMPLE_COLUMNS; col++) {
-        prandom_bytes(rnd, sizeof(rnd));
+        get_random_bytes(rnd, sizeof(rnd));
         for (i = 0; i < MCS_GROUP_RATES; i++) {
             new_idx = (i + rnd[i]) % MCS_GROUP_RATES;
             while (sample_table[col][new_idx] != 0xff)

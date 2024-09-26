@@ -121,7 +121,7 @@ void set_reg_fragment(unsigned int addr, unsigned int bit_end,
 int aml_w1_init(void);
 void  aml_w1_exit(void);
 int sdio_call_task( void );
-void aml_sdio_enable_wifi(void);
+unsigned char aml_sdio_enable_wifi(void);
 void aml_sdio_disable_wifi(void);
 
 

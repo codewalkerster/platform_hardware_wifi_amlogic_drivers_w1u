@@ -62,7 +62,7 @@ unsigned int bbpll_start (void);
 void aml_usb_ctlread_complete(struct urb *urb);
 #endif
 void aml_disable_wifi(void);
-void aml_enable_wifi(void);
+unsigned char aml_enable_wifi(void);
 
 extern void aml_wifi_set_mac_addr(void);
 extern char * aml_wifi_get_country_code(void);

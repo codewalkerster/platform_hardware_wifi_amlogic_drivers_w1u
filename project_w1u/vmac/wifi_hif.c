@@ -887,11 +887,22 @@ void hi_soft_tx_irq(void)
                 || (tx_null_status->txstatus == TX_DESCRIPTOR_STATUS_NULL_DATA_FAIL)
                 || (tx_null_status->txstatus == TX_DESCRIPTOR_STATUS_NEW)))
             {
-                __sync_fetch_and_add(&hif->HiStatus.Tx_Free_num,1);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)) && !defined (LINUX_PLATFORM)
+                __sync_fetch_and_add(&hif->HiStatus.Tx_Free_num, 1);
+#else
+                atomic_add(1, &hif->HiStatus.Tx_Free_num);
+#endif
             }
 
-            if ((tx_null_status->txstatus == TX_DESCRIPTOR_STATUS_NEW) && (hif->HiStatus.Tx_Free_num < hif->HiStatus.Tx_Done_num)) {
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)) && !defined (LINUX_PLATFORM)
+            if ((tx_null_status->txstatus == TX_DESCRIPTOR_STATUS_NEW) &&
+                (hif->HiStatus.Tx_Free_num < hif->HiStatus.Tx_Done_num)) {
                 __sync_fetch_and_add(&hif->HiStatus.Tx_Free_num,1);
+#else
+            if ((tx_null_status->txstatus == TX_DESCRIPTOR_STATUS_NEW) &&
+                (atomic_read(&hif->HiStatus.Tx_Free_num) < atomic_read(&hif->HiStatus.Tx_Done_num))) {
+                atomic_add(1, &hif->HiStatus.Tx_Free_num);
+#endif
             }
         }
 #elif defined (HAL_SIM_VER)
@@ -1471,6 +1482,7 @@ void hi_irq_task(struct hal_private *hal_priv)
     {
         hal_priv->sts_hirq[hirq_tx_err_idx]++;
         aml_request_recovery(WIFINET_RECOVERY_SRC_SDIO_TIMEOUT);
+        wifi_mac_get_repair_level();
         PRINT("--->TX_ERROR_IRQ\n");
         ASSERT(0);
     }

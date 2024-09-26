@@ -468,8 +468,7 @@ unsigned char hal_wake_fw_req(void)
     if (atomic_read(&halpriv->drv_suspend_cnt) != 0)
     {
         POWER_END_LOCK();
-        AML_PRINT_LOG_INFO("suspending, does not  wake, fw st %d\n",
-            halpriv->hal_fw_ps_status);
+        AML_PRINT_LOG_INFO("suspending, does not wake, hal_fw_ps_status:0x%x\n", halpriv->hal_fw_ps_status);
         return 0;
     }
 
@@ -497,7 +496,7 @@ unsigned char hal_wake_fw_req(void)
             host_req_status = hif->hif_ops.hi_bottom_read8(SDIO_FUNC1, RG_SDIO_PMU_HOST_REQ);
             host_sleep_req = ((host_req_status & HOST_SLEEP_REQ) != 0) ? 1 : 0;
 
-            //AML_PRINT_LOG_INFO("fw ps st 0x%x, fw_sleep 0x%x, host_sleep_req 0x%x\n", fw_ps_st, fw_sleep, host_sleep_req);
+            //AML_PRINT_LOG_INFO("fw_ps_st:0x%x, fw_sleep:0x%x, host_sleep_req:0x%x\n", fw_ps_st, fw_sleep, host_sleep_req);
             // fw/pmu st
             fw_ps_st = fw_ps_st & 0xF;
             if (fw_ps_st != PMU_ACT_MODE)
@@ -505,10 +504,9 @@ unsigned char hal_wake_fw_req(void)
                 if (wake_flag == 0)
                 {
                     wake_flag = 1;
-                //delay 10ms for pmu deep sleep
+                    //delay 10ms for pmu deep sleep
                     OS_MDELAY(10);
-
-                continue;
+                    continue;
                 }
                 else if ((fw_ps_st == PMU_SLEEP_MODE) && (wake_flag == 1))
                 {
@@ -1058,9 +1056,13 @@ unsigned char hal_alloc_fw_event_buf( struct hal_private *hal_priv)
 unsigned char hal_tx_empty()
 {
     struct hw_interface* hif = hif_get_hw_interface();
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && !defined (LINUX_PLATFORM)
     if ((hif->HiStatus.Tx_Send_num == hif->HiStatus.Tx_Free_num)
         &&(hif->HiStatus.Tx_Send_num ==hif->HiStatus.Tx_Done_num))
+#else
+    if ((atomic_read(&hif->HiStatus.Tx_Send_num) == atomic_read(&hif->HiStatus.Tx_Free_num))
+        &&(atomic_read(&hif->HiStatus.Tx_Send_num) == atomic_read(&hif->HiStatus.Tx_Done_num)))
+#endif
     {
         return true;
     }
@@ -1070,8 +1072,11 @@ unsigned char hal_tx_empty()
 unsigned char fw_tx_empty()
 {
     struct hw_interface* hif = hif_get_hw_interface();
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && !defined (LINUX_PLATFORM)
     if ( hif->HiStatus.Tx_Done_num == hif->HiStatus.Tx_Free_num )
+#else
+    if ( atomic_read(&hif->HiStatus.Tx_Done_num) == atomic_read(&hif->HiStatus.Tx_Free_num) )
+#endif
     {
         return true;
     }
@@ -1224,7 +1229,11 @@ void hal_txframe_pre(void)
             if (CO_SharedFifoEmpty(pTxShareFifo, CO_TX_BUFFER_MAKE))
             {
                 if ((txqueueid == HAL_WME_NOQOS)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && !defined (LINUX_PLATFORM)
                     && (hif->HiStatus.Tx_Done_num - hif->HiStatus.Tx_Free_num > 32)) {
+#else
+                && (atomic_read(&hif->HiStatus.Tx_Done_num) - atomic_read(&hif->HiStatus.Tx_Free_num) > 32)) {
+#endif
                     return;
                 }
 
@@ -1234,7 +1243,11 @@ void hal_txframe_pre(void)
                 id = hal_alloc_tx_id(hal_priv,pTxDescFiFo);
                 if (id == TXID_INVALID)
                 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && !defined (LINUX_PLATFORM)
                     if (hif->HiStatus.Tx_Done_num == hif->HiStatus.Tx_Free_num) {
+#else
+                    if (atomic_read(&hif->HiStatus.Tx_Done_num) == atomic_read(&hif->HiStatus.Tx_Free_num)) {
+#endif
                         tx_up_required = 1;
                     }
                     return ;
@@ -1259,7 +1272,11 @@ void hal_txframe_pre(void)
             id = hal_alloc_tx_id(hal_priv, pTxDescFiFo);
             if (id == TXID_INVALID)
             {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && !defined (LINUX_PLATFORM)
                 if (hif->HiStatus.Tx_Done_num == hif->HiStatus.Tx_Free_num) {
+#else
+                if (atomic_read(&hif->HiStatus.Tx_Done_num) == atomic_read(&hif->HiStatus.Tx_Free_num)) {
+#endif
                     tx_up_required = 1;
                 }
                 return ;
@@ -1479,7 +1496,11 @@ void  hal_tx_frame(void)
                     memcpy(tmp + offset, pTxDPape, len);
                     offset += len;
 #endif
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)) && !defined (LINUX_PLATFORM)
                     __sync_fetch_and_add(&hif->HiStatus.Tx_Done_num, 1);
+#else
+                    atomic_add(1, &hif->HiStatus.Tx_Done_num);
+#endif
                     tx_done_record(pTxDescFiFo,txqueueid);
 
                     EltPtr = CO_SharedFifoPick(pTxShareFifo, CO_TX_BUFFER_SET);
@@ -1663,8 +1684,11 @@ struct sk_buff *hal_fill_agg_start(struct hi_agg_tx_desc *HI_AGG,struct hi_tx_pr
 
     pTxDPape->TxOption.pkt_position = AML_PKT_IN_HAL;
     hal_priv->Hi_TxAgg[txqueueid] = pTxDPape;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)) && !defined (LINUX_PLATFORM)
     __sync_fetch_and_add(&hif->HiStatus.Tx_Send_num,1);
-
+#else
+    atomic_add(1, &hif->HiStatus.Tx_Send_num);
+#endif
     STATUS = CO_SharedFifoPut(&hal_priv->txds_trista_fifo[txqueueid],CO_TX_BUFFER_GET,1);
     ASSERT(STATUS==CO_STATUS_OK)
 
@@ -1737,8 +1761,11 @@ struct sk_buff *hal_fill_priv(struct hi_tx_priv_hdr* HI_TxPriv,unsigned char que
         hal_show_txframe(pTxDPape);
     }
 #endif
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)) && !defined (LINUX_PLATFORM)
     __sync_fetch_and_add(&hif->HiStatus.Tx_Send_num,1);
-
+#else
+    atomic_add(1, &hif->HiStatus.Tx_Send_num);
+#endif
     STATUS = CO_SharedFifoPut(&hal_priv->txds_trista_fifo[txqueueid],CO_TX_BUFFER_GET,1);
     ASSERT(STATUS==CO_STATUS_OK);
 
@@ -1768,7 +1795,11 @@ int hal_get_priv_cnt(unsigned char queue_id)
 int hal_get_agg_pend_cnt(void)
 {
     struct hw_interface* hif = hif_get_hw_interface();
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && !defined (LINUX_PLATFORM)
     return hif->HiStatus.Tx_Send_num - hif->HiStatus.Tx_Free_num;
+#else
+    return atomic_read(&hif->HiStatus.Tx_Send_num) - atomic_read(&hif->HiStatus.Tx_Free_num);
+#endif
 }
 
  int hal_tx_flush(unsigned char vid)
@@ -1841,8 +1872,14 @@ int hal_get_agg_pend_cnt(void)
 
                 hal_priv->hal_call_back->intr_tx_handle(hal_priv->drv_priv, &txstatus, pTxDescFiFo->callback, queue_id);
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)) && !defined (LINUX_PLATFORM)
                 __sync_fetch_and_add(&hif->HiStatus.Tx_Done_num,1);
                 __sync_fetch_and_add(&hif->HiStatus.Tx_Free_num,1);
+#else
+                atomic_add(1,&hif->HiStatus.Tx_Done_num);
+                atomic_add(1,&hif->HiStatus.Tx_Free_num);
+#endif
+
             } else {
                 remain_eltptr[remain_count++] = EltPtr;
                 COMMON_LOCK();
@@ -1961,7 +1998,14 @@ void hal_get_sts(unsigned int op_code, unsigned int ctrl_code)
 
             AML_PRINT_LOG_INFO("hal:tx_free_page %d \n", hal_priv->txPageFreeNum);
             AML_PRINT_LOG_INFO("hal:tx_ok_num:%d, tx_fail_num:%d\n", hif->HiStatus.tx_ok_num, hif->HiStatus.tx_fail_num);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && !defined (LINUX_PLATFORM)
             AML_PRINT_LOG_INFO("hal:send_frm:%d, done_frm:%d, free_frm:%d\n",  hif->HiStatus.Tx_Send_num, hif->HiStatus.Tx_Done_num, hif->HiStatus.Tx_Free_num);
+#else
+            AML_PRINT_LOG_INFO("hal:send_frm:%d, done_frm:%d, free_frm:%d\n",
+                   atomic_read(&hif->HiStatus.Tx_Send_num),
+                   atomic_read(&hif->HiStatus.Tx_Done_num),
+                   atomic_read(&hif->HiStatus.Tx_Free_num));
+#endif
             AML_PRINT_LOG_INFO("hal:gpio irq cnt %d \n",  hal_priv->gpio_irq_cnt);
             AML_PRINT_LOG_INFO("tx_cmp: tx_done_frm %d, tx_mng_frm %d, tx_page %d\n",
                 hal_priv->txcompletestatus->txdoneframecounter,
@@ -2430,6 +2474,13 @@ int hal_recovery_init_priv(void)
     hal_priv->tx_frames_map[0] = 0;
     hal_priv->tx_frames_map[1] = 0;
 
+    if (aml_bus_type == AML_BUS_TYPE_SDIO)
+    {
+        host_wake_req = hal_wake_fw_req;
+        host_suspend_req = aml_sdio_pm_suspend;
+        host_resume_req = aml_sdio_pm_resume;
+    }
+
     return 0;
 }
 
@@ -2777,7 +2828,11 @@ int hal_work_thread(void *param)
 
     PRINT("############# Exit work Thread ###############\n");
     WAKE_LOCK_DESTROY(hal_priv, WAKE_LOCK_WORK);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
     complete_and_exit(&hal_priv->work_thread_completion, 0);
+#else
+    kthread_complete_and_exit(&hal_priv->work_thread_completion, 0);
+#endif
 
     return 0;
 }
@@ -2818,7 +2873,11 @@ int hal_txok_thread(void *param)
         }
         if (aml_bus_type) {
             if ((hal_priv->dpd_wait_pkt_clear == 1)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && !defined (LINUX_PLATFORM)
                 && (hif->HiStatus.Tx_Free_num == hif->HiStatus.Tx_Done_num)) {
+#else
+                && (atomic_read(&hif->HiStatus.Tx_Free_num) == atomic_read(&hif->HiStatus.Tx_Done_num))) {
+#endif
                 hal_priv->dpd_wait_pkt_clear = 0;
                 hal_dpd_memory_download();
                 hal_dpd_memory_download_cmd();
@@ -2862,7 +2921,11 @@ int hal_txok_thread(void *param)
 
     AML_PRINT_LOG_INFO(" =====> exit TXOK Thread <=====\n");
     WAKE_LOCK_DESTROY(hal_priv, WAKE_LOCK_TXOK);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
     complete_and_exit(&hal_priv->txok_thread_completion, 0);
+#else
+    kthread_complete_and_exit(&hal_priv->txok_thread_completion, 0);
+#endif
 
     return 0;
 }
@@ -2997,7 +3060,11 @@ int hal_rx_thread(void *param)
 
     AML_PRINT_LOG_INFO("=====> exit RX Thread <=====\n");
     WAKE_LOCK_DESTROY(hal_priv, WAKE_LOCK_RX);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+    kthread_complete_and_exit(&hal_priv->rx_thread_completion, 0);
+#else
     complete_and_exit(&hal_priv->rx_thread_completion, 0);
+#endif
     return 0;
 }
 
@@ -3050,7 +3117,11 @@ int hi_irq_thread(void *param)
     }
 
     WAKE_LOCK_DESTROY(hal_priv, WAKE_LOCK_HI_IRQ_THREAD);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+    kthread_complete_and_exit(&hal_priv->hi_irq_thread_completion, 0);
+#else
     complete_and_exit(&hal_priv->hi_irq_thread_completion, 0);
+#endif
 
     return 0;
 }
@@ -3595,17 +3666,27 @@ void hal_txinfo_show()
         PRINT("pTxShareFifo->IdxTab[2] %d,%d,\n", pTxShareFifo->IdxTab[2].In,pTxShareFifo->IdxTab[2].Out);
     }
 
-    PRINT("HiStatus.Tx_Send_num %d \n",hif->HiStatus.Tx_Send_num);
-    PRINT("HiStatus.Tx_Free_num %d \n",hif->HiStatus.Tx_Free_num);
-    PRINT("HiStatus.Tx_Done_num %d \n",hif->HiStatus.Tx_Done_num);
-    PRINT(" hal_priv->txPageFreeNum%d,\n",  hal_priv->txPageFreeNum);
-    PRINT(" hal_priv->bitmap[0]=%lx,\n",   hal_priv->tx_frames_map[0]);
-    PRINT(" hal_priv->bitmap[1]=%lx,\n",   hal_priv->tx_frames_map[1]);
-    PRINT(" hal_priv->HalTxPageDoneCounter=%d,\n",   hal_priv->HalTxPageDoneCounter );
-    PRINT(" hal_priv->HalTxFrameDoneCounter=%d,\n",   hal_priv->HalTxFrameDoneCounter );
-    PRINT(" hal_priv->txcompletestatus->txpagecounter=%d,\n",   hal_priv->txcompletestatus->txpagecounter );
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && !defined (LINUX_PLATFORM)
+    PRINT("HiStatus.Tx_Send_num %d \n", hif->HiStatus.Tx_Send_num);
+    PRINT("HiStatus.Tx_Free_num %d \n", hif->HiStatus.Tx_Free_num);
+    PRINT("HiStatus.Tx_Done_num %d \n", hif->HiStatus.Tx_Done_num);
+#else
+    PRINT("HiStatus.Tx_Send_num %d \n", atomic_read(&hif->HiStatus.Tx_Send_num));
+    PRINT("HiStatus.Tx_Free_num %d \n", atomic_read(&hif->HiStatus.Tx_Free_num));
+    PRINT("HiStatus.Tx_Done_num %d \n", atomic_read(&hif->HiStatus.Tx_Done_num));
+#endif
+    PRINT(" hal_priv->txPageFreeNum%d,\n", hal_priv->txPageFreeNum);
+    PRINT(" hal_priv->bitmap[0]=%lx,\n", hal_priv->tx_frames_map[0]);
+    PRINT(" hal_priv->bitmap[1]=%lx,\n", hal_priv->tx_frames_map[1]);
+    PRINT(" hal_priv->HalTxPageDoneCounter=%d,\n", hal_priv->HalTxPageDoneCounter );
+    PRINT(" hal_priv->HalTxFrameDoneCounter=%d,\n", hal_priv->HalTxFrameDoneCounter );
+    PRINT(" hal_priv->txcompletestatus->txpagecounter=%d,\n", hal_priv->txcompletestatus->txpagecounter );
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && !defined (LINUX_PLATFORM)
     PRINT("HiStatus.Tx_Done_num-- %d \n",hif->HiStatus.Tx_Done_num);
+#else
+    PRINT("HiStatus.Tx_Done_num %d \n", atomic_read(&hif->HiStatus.Tx_Done_num));
+#endif
 }
 
 void hal_dpd_memory_download(void)
@@ -3704,7 +3785,11 @@ void hal_dpd_calibration(void)
         if ((wnet_vif != NULL) && (wnet_vif->vm_opmode == WIFINET_M_STA)) {
             wifi_mac_scan_forbidden(wnet_vif,FORBIDDEN_SCAN_FOR_DPD_RECAIL_TIMEOUT,FORBIDDEN_SCAN_FOR_DPD_RECAIL);
         }
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && !defined (LINUX_PLATFORM)
         if (hif->HiStatus.Tx_Free_num != hif->HiStatus.Tx_Done_num) {
+#else
+        if (atomic_read(&hif->HiStatus.Tx_Free_num) != atomic_read(&hif->HiStatus.Tx_Done_num)) {
+#endif
             hal_priv->dpd_wait_pkt_clear = 1;
             return;
         }

@@ -190,12 +190,23 @@ static void rf_test_mode_recover(struct drv_private *drv_priv)
 void aml_w1_fw_recovery(void *drv_priv)
 {
     struct drv_private *p_drv_priv = (struct drv_private *)drv_priv;
+    unsigned char res;
 
     if (aml_wifi_is_enable_rf_test()) {
         rf_test_mode_recover(p_drv_priv);
     }
+
     aml_disable_wifi();
-    aml_enable_wifi();
+    res = aml_enable_wifi();
+    if ((aml_bus_type == AML_BUS_TYPE_SDIO) && !res) {
+        aml_request_recovery(WIFINET_RECOVERY_SRC_SDIO_TIMEOUT);
+        wifi_mac_get_repair_level();
+        aml_disable_wifi();
+        res = aml_enable_wifi();
+        if (!res) {
+            AML_PRINT_LOG_INFO("fw recovery fail!!!");
+        }
+    }
 
     if (p_drv_priv->hal_priv->hal_fw_log_flag) {
         hal_set_fwlog_cmd(FWLOG_AON_PIN_MUX_ENABLE);

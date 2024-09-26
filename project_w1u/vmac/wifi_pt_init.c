@@ -609,7 +609,11 @@ static int b2b_tx_thread_function(void *param)
         AML_PRINT_LOG_INFO("**** stop : when pt send pkt %d done ***\n", loop);
     }// thread loop
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
     complete_and_exit(&b2b_tx_struct.b2b_thread_cmplt, 0);
+#else
+    kthread_complete_and_exit(&b2b_tx_struct.b2b_thread_cmplt, 0);
+#endif
     AML_PRINT_LOG_INFO("**** exit b2b_tx_thread_function ***\n");
     return 0;
 }
@@ -925,7 +929,7 @@ void Pool_Create( struct _Pool* my, unsigned short size,
         //
         // Enforce (at least) word alignment of all the blocks
         //
-        int i;
+        int NameLen;
         ASSERT( ( unsigned int )(unsigned long)buffer % 4 == 0
             && size % 4 == 0 && count != 0 );
 
@@ -936,8 +940,17 @@ void Pool_Create( struct _Pool* my, unsigned short size,
         my->size = size;
         my->max_count = count;
         my->min_count = count;
-        for ( i =0; i<16; i++)
-                my->name[i] = name[i];
+
+        NameLen = strlen(name) + 1;
+
+        if (NameLen > 16)
+        {
+            NameLen = 16;
+            AML_PRINT_LOG_WRAN("Max NameLen is 16 \n");
+        }
+
+        memcpy(&my->name[0],name,NameLen);
+
         //
         // Important: queue_buffer[] size must be at least count + 1
         //

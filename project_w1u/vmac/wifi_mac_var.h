@@ -402,6 +402,9 @@ struct wifi_mac
     struct wifi_mac_wme_state wm_wme[DEFAULT_MAX_VMAC];
     int wm_ac2q[WME_NUM_AC];
 
+    unsigned char wm_alpha_pending;
+    unsigned char wm_alpha_target[3];
+
     int wm_new_nchans;
     struct wifi_channel wm_new_channels[WIFINET_CHAN_MAX * 2 + 1];
     spinlock_t new_channel_lock;
@@ -488,6 +491,7 @@ struct wifi_mac
     unsigned char scan_max_gain_thresh;
     enum wifi_scan_noise scan_noisy_status;
     unsigned char is_connect_set_gain;
+    unsigned char force_set_gain;
     unsigned char bt_lk;
 
     unsigned char wm_doth_tbtt;
@@ -816,6 +820,7 @@ struct wlan_net_vif
     unsigned char vm_sae_h2e_only;
     unsigned char csa_count;
     unsigned int  regulatory_flags;
+    unsigned char vm_connecting_retry_cnt;
 };
 
 #define WIFINET_PSQUEUE_PS4QUIET 0x0001

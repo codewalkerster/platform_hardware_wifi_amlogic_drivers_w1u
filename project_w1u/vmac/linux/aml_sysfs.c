@@ -27,29 +27,6 @@ static ssize_t show_hang_info(struct device *d, struct device_attribute *attr,
 
 static DEVICE_ATTR(hang_info, S_IRUGO, show_hang_info, NULL);
 
-unsigned char set_gain_allowed = 1;
-static ssize_t store_set_gain_allowed(struct device *d, struct device_attribute *attr,
-                char *buf, ssize_t len)
-{
-    unsigned char allowed = *buf - 48;
-
-    if ((allowed < 0) || (allowed > 1)) {
-        AML_PRINT_LOG_ERR("The input allowed is error");
-        return -EFAULT;
-    }
-    set_gain_allowed = allowed;
-    AML_PRINT_LOG_INFO(" set_gain_allowed:%d \n",set_gain_allowed);
-    return len;
-}
-
-static ssize_t show_set_gain_allowed(struct device *d, struct device_attribute *attr,
-                 char *buf)
-{
-    return sprintf(buf, "set_gain_allowed=%d\n", set_gain_allowed);
-}
-
-static DEVICE_ATTR(set_gain_allowed, S_IWUSR|S_IWGRP|S_IRUGO, show_set_gain_allowed, store_set_gain_allowed);
-
 static ssize_t show_driver(struct device *d, struct device_attribute *attr,
                  char *buf)
 {
@@ -141,10 +118,22 @@ static ssize_t show_rRssi(struct device *d, struct device_attribute *attr,
     unsigned int Rssi;
 
     wnet_vif = g_wnet_vif0;
-    Rssi = g_wnet_vif0->vm_mainsta->sta_avg_rssi;
-    if (!wnet_vif)
-        return -EFAULT;
-    return sprintf(buf, "Rssi :%d\n", Rssi);
+
+    if (!wnet_vif || !wnet_vif->vm_mainsta) {
+        return sprintf(buf, "[WARN] vif or mainsta is null\n");
+    }
+
+    if ( wnet_vif->vm_opmode != WIFINET_M_STA) {
+        return sprintf(buf, "[WARN] mode:%d\n",wnet_vif->vm_opmode);
+    }
+
+    if (wnet_vif->vm_state != WIFINET_S_CONNECTED) {
+        return sprintf(buf, "[WARN] state:%d\n",wnet_vif->vm_state);
+    }
+
+    Rssi = wnet_vif->vm_mainsta->sta_avg_rssi;
+
+    return sprintf(buf, "Rssi:%d\n", Rssi - 256);
 }
 
 static DEVICE_ATTR(rRssi, S_IRUGO, show_rRssi, NULL);
@@ -162,9 +151,19 @@ static ssize_t show_iSnr(struct device *d, struct device_attribute *attr,
     get_phy_stc_info(arr);
     Snr = arr[1];
 
-    if (!wnet_vif)
-        return -EFAULT;
-    return sprintf(buf, "Snr :%d\n", Snr);
+    if (!wnet_vif || !wnet_vif->vm_mainsta) {
+        return sprintf(buf, "[WARN] vif or mainsta is null\n");
+    }
+
+    if ( wnet_vif->vm_opmode != WIFINET_M_STA) {
+        return sprintf(buf, "[WARN] mode:%d\n",wnet_vif->vm_opmode);
+    }
+
+    if (wnet_vif->vm_state != WIFINET_S_CONNECTED) {
+        return sprintf(buf, "[WARN] state:%d\n",wnet_vif->vm_state);
+    }
+
+    return sprintf(buf, "Snr:%d\n", wnet_vif->vm_mainsta->sta_avg_snr);
 }
 
 static DEVICE_ATTR(iSnr, S_IRUGO, show_iSnr, NULL);
@@ -394,9 +393,19 @@ static ssize_t show_iNoise(struct device *d, struct device_attribute *attr,
     get_phy_stc_info(arr);
     Noise = arr[4];
 
-    if (!wnet_vif)
-        return -EFAULT;
-    return sprintf(buf, "Noise :%d\n", Noise);
+    if (!wnet_vif || !wnet_vif->vm_mainsta) {
+        return sprintf(buf, "[WARN] vif or mainsta is null\n");
+    }
+
+    if ( wnet_vif->vm_opmode != WIFINET_M_STA) {
+        return sprintf(buf, "[WARN] mode:%d\n",wnet_vif->vm_opmode);
+    }
+
+    if (wnet_vif->vm_state != WIFINET_S_CONNECTED) {
+        return sprintf(buf, "[WARN] state:%d\n",wnet_vif->vm_state);
+    }
+
+    return sprintf(buf, "Noise:%d\n", (wnet_vif->vm_mainsta->sta_avg_rssi - 256 - wnet_vif->vm_mainsta->sta_avg_snr));
 }
 
 
@@ -594,10 +603,22 @@ static ssize_t show_p2p_rRssi(struct device *d, struct device_attribute *attr,
     unsigned int Rssi;
 
     wnet_vif = g_wnet_vif1;
-    Rssi = g_wnet_vif1->vm_mainsta->sta_avg_rssi;
-    if (!wnet_vif)
-        return -EFAULT;
-    return sprintf(buf, "p2p_Rssi :%d\n", Rssi);
+
+    if (!wnet_vif || !wnet_vif->vm_mainsta) {
+        return sprintf(buf, "[WARN] vif or mainsta is null\n");
+    }
+
+    if ( wnet_vif->vm_opmode != WIFINET_M_STA) {
+        return sprintf(buf, "[WARN] mode:%d\n",wnet_vif->vm_opmode);
+    }
+
+    if (wnet_vif->vm_state != WIFINET_S_CONNECTED) {
+        return sprintf(buf, "[WARN] state:%d\n",wnet_vif->vm_state);
+    }
+
+    Rssi = wnet_vif->vm_mainsta->sta_avg_rssi;
+
+    return sprintf(buf, "p2p_Rssi:%d\n", Rssi - 256);
 }
 
 
@@ -608,15 +629,22 @@ static ssize_t show_p2p_iNoise(struct device *d, struct device_attribute *attr,
                  char *buf)
 {
     struct wlan_net_vif *wnet_vif = NULL;
-    unsigned int arr[8] = {0};
-    unsigned int Noise;
 
     wnet_vif = g_wnet_vif1;
-    if (!wnet_vif)
-        return -EFAULT;
-    get_phy_stc_info(arr);
-    Noise = arr[4];
-    return sprintf(buf, "p2p_Noise :%d\n", Noise);
+
+    if (!wnet_vif || !wnet_vif->vm_mainsta) {
+        return sprintf(buf, "[WARN] vif or mainsta is null\n");
+    }
+
+    if ( wnet_vif->vm_opmode != WIFINET_M_STA) {
+        return sprintf(buf, "[WARN] mode:%d\n",wnet_vif->vm_opmode);
+    }
+
+    if (wnet_vif->vm_state != WIFINET_S_CONNECTED) {
+        return sprintf(buf, "[WARN] state:%d\n",wnet_vif->vm_state);
+    }
+
+    return sprintf(buf, "p2p_Noise:%d\n", (wnet_vif->vm_mainsta->sta_avg_rssi - 256 - wnet_vif->vm_mainsta->sta_avg_snr));
 }
 
 static DEVICE_ATTR(p2p_iNoise , S_IRUGO, show_p2p_iNoise , NULL);
@@ -634,9 +662,19 @@ static ssize_t show_p2p_iSnr(struct device *d, struct device_attribute *attr,
     get_phy_stc_info(arr);
     Snr = arr[1];
 
-    if (!wnet_vif)
-        return -EFAULT;
-    return sprintf(buf, "p2p_Snr :%d\n", Snr);
+    if (!wnet_vif || !wnet_vif->vm_mainsta) {
+        return sprintf(buf, "[WARN] vif or mainsta is null\n");
+    }
+
+    if ( wnet_vif->vm_opmode != WIFINET_M_STA) {
+        return sprintf(buf, "[WARN] mode:%d\n",wnet_vif->vm_opmode);
+    }
+
+    if (wnet_vif->vm_state != WIFINET_S_CONNECTED) {
+        return sprintf(buf, "[WARN] state:%d\n",wnet_vif->vm_state);
+    }
+
+    return sprintf(buf, "p2p_Snr:%d\n", wnet_vif->vm_mainsta->sta_avg_snr);
 }
 
 static DEVICE_ATTR(p2p_iSnr, S_IRUGO, show_p2p_iSnr, NULL);
@@ -960,7 +998,6 @@ static struct attribute *aml_sysfs_entries[] = {
         &dev_attr_bssid.attr,
         &dev_attr_wakeup_reason.attr,
         &dev_attr_ap_info.attr,
-        &dev_attr_set_gain_allowed.attr,
         &dev_attr_cca_thrd_cfg.attr,
         &dev_attr_rate_statics.attr,
         NULL,

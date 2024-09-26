@@ -1021,11 +1021,16 @@ void wifi_mac_process_beacon_miss_ex(SYS_TYPE arg)
         return;
     }
 
+    wnet_vif->vm_bmiss_count = 0;
+    if (wifimac->wm_recovery_flags & WIFINET_RECOVERY_F_RUNNING) {
+        AML_PRINT_LOG_INFO("recovery will be done\n");
+        return;
+    }
+
     /*
     * when 2 beacons lost: 1) sta is in roaming, then do asso
     * otherwise 2) sta lost ap totally then do scan again
     */
-    wnet_vif->vm_bmiss_count = 0;
     if (wifimac->wm_roaming == WIFINET_ROAMING_FAST) {
         AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_INFO,"roaming bcn lost...\n");
         wifi_mac_top_sm(wnet_vif, WIFINET_S_ASSOC, 1);
