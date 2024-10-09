@@ -3992,6 +3992,7 @@ static iw_handler aml_iwpriv_private_handler[] = {
     aml_set_dev_sn,
     aml_set_efuse_wifi_mac,
     NULL, //necessary,reserve enough kernel space to copy data
+    NULL,
     aml_set_efuse_btmac,
     NULL, //necessary,reserve enough kernel space to copy data
     aml_iwpriv_set_debug,
@@ -4386,21 +4387,21 @@ static const struct iw_priv_args aml_iwpriv_private_args[] = {
     SIOCIWFIRSTPRIV + 14,
     IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_FIXED | 18,0, "set_mac_addr"},
 {
-    SIOCIWFIRSTPRIV + 16,
+    SIOCIWFIRSTPRIV + 17,
     IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_FIXED | 18,0, "set_bt_dev_id"},
 {
-    SIOCIWFIRSTPRIV + 18,
+    SIOCIWFIRSTPRIV + 19,
     IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_MASK, 0, "set_debug"},
 {
-     SIOCIWFIRSTPRIV + 19,
+     SIOCIWFIRSTPRIV + 20,
     0, IW_PRIV_TYPE_CHAR | 0, "set_capture"},
 {
-     SIOCIWFIRSTPRIV + 20,
+     SIOCIWFIRSTPRIV + 21,
     0, IW_PRIV_TYPE_BYTE | IW_PRIV_SIZE_MASK, "get_csi_info"},
 
     /*iwpriv set command, there is 3 parameters*/
 {
-    SIOCIWFIRSTPRIV + 21,
+    SIOCIWFIRSTPRIV + 22,
     IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 3, 0, ""},
 {
     AML_IWP_GET_KEY_ENTRY,
@@ -4409,7 +4410,7 @@ static const struct iw_priv_args aml_iwpriv_private_args[] = {
     AML_IWP_SET_EFUSE_TMP,
     IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 3, 0, "set_efuse_tmp"},
 {
-     SIOCIWFIRSTPRIV + 22,
+     SIOCIWFIRSTPRIV + 23,
     IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_FIXED | 34, 0, "set_wmme"},
 
 };
