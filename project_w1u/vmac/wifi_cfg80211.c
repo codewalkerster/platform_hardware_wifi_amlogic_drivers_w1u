@@ -997,7 +997,7 @@ vm_p2p_set_probersp_ie(struct wlan_net_vif *wnet_vif, char *frm, int len)
         wifi_mac_save_app_ie(wfd_app_ie,tmp,tmplen);
     }
 #endif //CONFIG_WFD
-
+    wnet_vif->vm_p2p->p2p_app_ie[WIFINET_APPIE_FRAME_PROBE_RESP].need_update = 0;
     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "set_probersp %d wps_ie len %d\n", tmp, tmplen);
     return ret;
 }
@@ -4812,6 +4812,7 @@ vm_cfg80211_remain_on_channel(
     } else {
         wifi_mac_ChangeChannel(wifimac, p2p->work_channel, 0, wnet_vif->wnet_vif_id);
     }
+    wnet_vif->vm_p2p->p2p_app_ie[WIFINET_APPIE_FRAME_PROBE_RESP].need_update = 1;
     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO,"p2p_case: duration %d\n", restore_duration * 100);
     cfg80211_ready_on_channel(p2p->wnet_vif->vm_wdev, *cookie, channel,
     vm_p2p_discover_listen(p2p, target_channel, restore_duration * 100), GFP_KERNEL);
@@ -4869,6 +4870,7 @@ static int vm_cfg80211_cancel_remain_on_channel(struct wiphy *wiphy,
             return 0;
         }
 */
+        wnet_vif->vm_p2p->p2p_app_ie[WIFINET_APPIE_FRAME_PROBE_RESP].need_update = 0;
         AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "<%s>\n", dev->name);
         vm_p2p_cancel_remain_channel(p2p);
     } else {
@@ -5152,9 +5154,20 @@ static int vm_cfg80211_mgmt_tx_p2p(struct wiphy *wiphy, struct wireless_dev *wde
     AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_INFO,"len=%zd, ch=%d, frameCtl [0]=0x%x [1]=0x%x wnet_vif_id=%d center_freq=%d\n",
          params->len, ieee80211_frequency_to_channel(center_freq), wh->i_fc[0], wh->i_fc[1],wnet_vif->wnet_vif_id,center_freq);
 
-    if (WIFINET_IS_ACTION(wh)) {
-        preempt_scan(dev, 100, 100);
+    if (WIFINET_IS_ACTION(wh) || WIFINET_IS_PROBERSP(wh)) {
 
+        if (WIFINET_IS_ACTION(wh)) {
+            preempt_scan(dev, 100, 100);
+        }
+        if (WIFINET_IS_PROBERSP(wh) &&  (wnet_vif->vm_p2p->p2p_enable && vm_p2p_is_state(wnet_vif->vm_p2p, NET80211_P2P_STATE_LISTEN))) {
+            unsigned char probe_resp_ie_offset = sizeof(struct wifi_frame) + WIFINET_FIXED_PARAM_OFFSET;
+            AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "fc == WIFINET_STYPE_PROBE_RESP params len:%d\n", params->len);
+            vm_p2p_set_wpsp2pie(ndev, (unsigned char *)(params->buf + probe_resp_ie_offset), params->len - probe_resp_ie_offset, P2P_PROBE_RESP_IE);
+            ack = true;
+            goto exit;
+        } else if (WIFINET_IS_PROBERSP(wh)) {
+            goto exit;
+        }
     } else {
         if (WIFINET_IS_PROBERSP(wh)) {
             AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "fc == WIFINET_STYPE_PROBE_RESP\n");

@@ -2599,6 +2599,7 @@ int vm_p2p_up(struct wlan_net_vif *wnet_vif)
             p2p->p2p_negotiation_state = NET80211_P2P_STATE_GO_COMPLETE;
         }
     }
+    wnet_vif->vm_wmac->drv_priv->drv_ops.drv_set_is_mother_channel(wnet_vif->vm_wmac->drv_priv, wnet_vif->wnet_vif_id, 1);
     return 0;
 }
 

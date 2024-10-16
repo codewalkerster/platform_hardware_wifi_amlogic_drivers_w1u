@@ -238,6 +238,7 @@ struct wifi_mac_app_ie_t
 {
     unsigned int length;
     unsigned char *ie;
+    unsigned char need_update;
 };
 
 #define AML_MCAST_QUEUE
@@ -450,6 +451,8 @@ struct wifi_mac
     spinlock_t wm_free_lock;
     unsigned long wm_free_lock_flags;
     spinlock_t wm_amsdu_tasklet_lock;
+    spinlock_t wm_proberesplock;
+    unsigned long wm_proberesplock_flags;
 
     int wnet_vif_num;
     struct list_head wm_wnet_vifs;

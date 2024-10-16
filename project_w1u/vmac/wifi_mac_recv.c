@@ -3070,7 +3070,7 @@ void wifi_mac_pkt_parse_element(struct wlan_net_vif *wnet_vif,
 
     *invalid = 1;
     if ((subtype == WIFINET_FC0_SUBTYPE_BEACON) || (subtype == WIFINET_FC0_SUBTYPE_PROBE_RESP)) {
-        WIFINET_VERIFY_LENGTH(efrm - frm, 12);
+        WIFINET_VERIFY_LENGTH(efrm - frm, WIFINET_FIXED_PARAM_OFFSET);
         scan->tstamp = frm;
         frm += 8;
         scan->bintval = le16toh(*(unsigned short *)frm);
@@ -3665,7 +3665,7 @@ void wifi_mac_recv_probersp(struct wlan_net_vif *wnet_vif,
 
 
 void wifi_mac_recv_probe_req(struct wlan_net_vif *wnet_vif,
-    struct wifi_station *sta, struct sk_buff *skb, int rssi)
+    struct wifi_station *sta, struct sk_buff *skb, int rssi, unsigned int channel)
 {
     struct wifi_frame *wh;
     unsigned char *frm, *efrm;
@@ -3765,7 +3765,7 @@ void wifi_mac_recv_probe_req(struct wlan_net_vif *wnet_vif,
 
 #ifdef CONFIG_P2P
         //for p2p and listen, for client or dev, only response to P2P_WILDCARD_SSID
-        if (wnet_vif->vm_p2p_support && vm_p2p_is_state(wnet_vif->vm_p2p, NET80211_P2P_STATE_LISTEN)
+        if (wnet_vif->vm_p2p_support && (vm_p2p_is_state(wnet_vif->vm_p2p, NET80211_P2P_STATE_LISTEN))
             && ((wnet_vif->vm_p2p->p2p_role == NET80211_P2P_ROLE_CLIENT) ||(wnet_vif->vm_p2p->p2p_role == NET80211_P2P_ROLE_DEVICE)))
         {
             if ((!ssid) || (ssid[1] != P2P_WILDCARD_SSID_LEN)
@@ -3850,6 +3850,12 @@ void wifi_mac_recv_probe_req(struct wlan_net_vif *wnet_vif,
         }
 #endif //CONFIG_WFD
 
+        /*roc in some linux platform not apply p2pie in proberesp to driver*/
+        if (wnet_vif->vm_p2p->p2p_enable && vm_p2p_is_state(wnet_vif->vm_p2p, NET80211_P2P_STATE_LISTEN)
+            && wnet_vif->vm_p2p->p2p_app_ie[WIFINET_APPIE_FRAME_PROBE_RESP].need_update) {
+            AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_INFO, "roc notify probe req to supplicant sa:%s\n", ether_sprintf(wh->i_addr2));
+            vm_cfg80211_notify_mgmt_rx(wnet_vif, channel, os_skb_data(skb),os_skb_get_pktlen(skb));
+        }
         wifi_mac_send_mgmt(sta, WIFINET_FC0_SUBTYPE_PROBE_RESP, (void *)wh->i_addr2);
 
         if (wps != NULL)
@@ -5157,7 +5163,7 @@ void wifi_mac_recv_mgmt(struct wifi_station *sta, struct sk_buff *skb,
             break;
 
         case WIFINET_FC0_SUBTYPE_PROBE_REQ:
-            wifi_mac_recv_probe_req(wnet_vif, sta, skb, rssi);
+            wifi_mac_recv_probe_req(wnet_vif, sta, skb, rssi, channel);
             break;
 
         case WIFINET_FC0_SUBTYPE_AUTH:

@@ -1309,6 +1309,7 @@ static void drv_tx_complete_mgmt_handle(struct drv_private *drv_priv,struct drv_
     int txok = (status == TX_DESCRIPTOR_STATUS_SUCCESS);
     int mgmt_arg;
     static int deauth_fail_time = 0;
+    struct wifi_frame *wh = (struct wifi_frame *)ptxdesc->txdesc_ddraddr;
 
     wnet_vif = sta->sta_wnet_vif;
 
@@ -1357,8 +1358,8 @@ static void drv_tx_complete_mgmt_handle(struct drv_private *drv_priv,struct drv_
 #endif
     if ((ptxdesc->txdesc_frame_flag >= TX_MGMT_PROBE_REQ) && !txok) {
         drv_priv->drv_ops.cca_busy_check();
-        AML_PRINT_LOG_INFO("txdesc_frame_flag:%d, status=%d, rate:%02x\n",
-            ptxdesc->txdesc_frame_flag, status, ptxdesc->txdesc_rateinfo[0].vendor_rate_code);
+        AML_PRINT_LOG_INFO("txdesc_frame_flag:%d, status=%d, rate:%02x da:%s\n",
+            ptxdesc->txdesc_frame_flag, status, ptxdesc->txdesc_rateinfo[0].vendor_rate_code, wh?ether_sprintf(wh->i_addr1):"null");
 
     } else if (ptxdesc->txdesc_frame_flag == TX_MGMT_ADDBA_RSP) {
         ;
