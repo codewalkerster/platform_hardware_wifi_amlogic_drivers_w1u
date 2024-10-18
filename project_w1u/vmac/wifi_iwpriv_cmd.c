@@ -3974,32 +3974,32 @@ static const iw_handler standard_handler[] = {
 
 #if defined(CONFIG_WEXT_PRIV) || LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 32)
 static iw_handler aml_iwpriv_private_handler[] = {
-    aml_ap_send_addba_req,
-    aml_iwpriv_send_para1,
-    //NULL,
+    aml_ap_send_addba_req, //index=0
+    aml_iwpriv_send_para1, //index=1
     /*if we need feed back the value to user space, we need jump command for large buffer*/
-    aml_iwpriv_get,
-    NULL,
-    aml_ap_set_udp_info,
-    aml_iwpriv_get_int,
-    aml_ap_set_arp_rx,
-    aml_iwpriv_get_char,
-    aml_ap_set_amsdu_state,
-    aml_ap_set_ampdu_state,
-    aml_set_country_code,
-    aml_iwpriv_send_para2,
-    aml_iwpriv_set_reg_legacy,
-    aml_set_dev_sn,
-    aml_set_efuse_wifi_mac,
-    NULL, //necessary,reserve enough kernel space to copy data
-    NULL,
-    aml_set_efuse_btmac,
-    NULL, //necessary,reserve enough kernel space to copy data
-    aml_iwpriv_set_debug,
-    aml_iwpriv_start_capture,
-    aml_iwpriv_get_csi_info,
-    aml_iwpriv_send_para3,
-    aml_iwpriv_set_wmme,
+    aml_iwpriv_get, //index=2
+    NULL, //index=3
+    aml_ap_set_udp_info, //index=4
+    aml_iwpriv_get_int, //index=5
+    aml_ap_set_arp_rx, //index=6
+    aml_iwpriv_get_char, //index=7
+    aml_ap_set_amsdu_state, //index=8
+    aml_ap_set_ampdu_state, //index=9
+    aml_set_country_code, //index=10
+    aml_iwpriv_send_para2, //index=11
+    aml_iwpriv_set_reg_legacy, //index=12
+    aml_set_dev_sn, //index=13
+    aml_set_efuse_wifi_mac, //index=14
+    NULL, //necessary,reserve enough kernel space to copy data, index=15
+    NULL, //index=16
+    NULL, //index=17
+    aml_set_efuse_btmac,//index=18
+    NULL, //necessary,reserve enough kernel space to copy data, //index=19
+    aml_iwpriv_set_debug,//index=20
+    aml_iwpriv_start_capture,//index=21
+    aml_iwpriv_get_csi_info,//index=22
+    aml_iwpriv_send_para3,//index=23
+    aml_iwpriv_set_wmme,//index=24
 };
 
 static const struct iw_priv_args aml_iwpriv_private_args[] = {
@@ -4387,21 +4387,21 @@ static const struct iw_priv_args aml_iwpriv_private_args[] = {
     SIOCIWFIRSTPRIV + 14,
     IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_FIXED | 18,0, "set_mac_addr"},
 {
-    SIOCIWFIRSTPRIV + 17,
+    SIOCIWFIRSTPRIV + 18,
     IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_FIXED | 18,0, "set_bt_dev_id"},
 {
-    SIOCIWFIRSTPRIV + 19,
+    SIOCIWFIRSTPRIV + 20,
     IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_MASK, 0, "set_debug"},
 {
-     SIOCIWFIRSTPRIV + 20,
+     SIOCIWFIRSTPRIV + 21,
     0, IW_PRIV_TYPE_CHAR | 0, "set_capture"},
 {
-     SIOCIWFIRSTPRIV + 21,
+     SIOCIWFIRSTPRIV + 22,
     0, IW_PRIV_TYPE_BYTE | IW_PRIV_SIZE_MASK, "get_csi_info"},
 
     /*iwpriv set command, there is 3 parameters*/
 {
-    SIOCIWFIRSTPRIV + 22,
+    SIOCIWFIRSTPRIV + 23,
     IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 3, 0, ""},
 {
     AML_IWP_GET_KEY_ENTRY,
@@ -4410,7 +4410,7 @@ static const struct iw_priv_args aml_iwpriv_private_args[] = {
     AML_IWP_SET_EFUSE_TMP,
     IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 3, 0, "set_efuse_tmp"},
 {
-     SIOCIWFIRSTPRIV + 23,
+     SIOCIWFIRSTPRIV + 24,
     IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_FIXED | 34, 0, "set_wmme"},
 
 };
