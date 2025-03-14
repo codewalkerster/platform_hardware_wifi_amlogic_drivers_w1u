@@ -844,13 +844,36 @@ static int aml_drv_proc_open(struct inode *inode, struct file *file)
     }
 }
 
+static int aml_drv_proc_release(struct inode *inode, struct file *file)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,16,0)
+    ssize_t index = (ssize_t)PDE_DATA(inode);
+#else
+    ssize_t index = (ssize_t)pde_data(inode);
+#endif
+
+    const struct aml_proc_hdl *hdl = drv_proc_hdls + index;
+
+    if (hdl->type == AML_PROC_HDL_TYPE_SEQ) {
+        return seq_release(inode, file);
+    }
+
+    if ((hdl->type == AML_PROC_HDL_TYPE_SSEQ) ||
+        (hdl->type == AML_PROC_HDL_TYPE_SZSEQ)) {
+        return single_release(inode, file);
+    }
+
+    AML_PRINT_LOG_ERR("hdl->type:%d err\n",hdl->type);
+    return -EROFS;
+}
+
 static const struct aml_proc_ops fwcfg_ops = {
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0))
         .proc_open = aml_drv_proc_open,
         .proc_read = cfgRead,
         .proc_lseek = seq_lseek,
-        .proc_release = seq_release,
+        .proc_release = aml_drv_proc_release,
         .proc_write = cfgWrite,
 #else
         .owner = THIS_MODULE,
@@ -866,7 +889,7 @@ static const struct aml_proc_ops fwdriver_ops = {
         .proc_open = aml_drv_proc_open,
         .proc_read = driverRead,
         .proc_lseek = seq_lseek,
-        .proc_release = seq_release,
+        .proc_release = aml_drv_proc_release,
         .proc_write = driverWrite,
 #else
         .owner = THIS_MODULE,
@@ -882,7 +905,7 @@ static const struct aml_proc_ops fwdbglevel_ops = {
         .proc_open = aml_drv_proc_open,
         .proc_read = dbglevelRead,
         .proc_lseek = seq_lseek,
-        .proc_release = seq_release,
+        .proc_release = aml_drv_proc_release,
         .proc_write = dbglevelWrite,
 #else
         .owner = THIS_MODULE,
@@ -898,7 +921,7 @@ static const struct aml_proc_ops fwcountry_ops = {
         .proc_open = aml_drv_proc_open,
         .proc_read = countryRead,
         .proc_lseek = seq_lseek,
-        .proc_release = seq_release,
+        .proc_release = aml_drv_proc_release,
         .proc_write = countryWrite,
 #else
         .owner = THIS_MODULE,
@@ -914,7 +937,7 @@ static const struct aml_proc_ops fwdisconnect_ops = {
         .proc_open = aml_drv_proc_open,
         .proc_read = disconnectRead,
         .proc_lseek = seq_lseek,
-        .proc_release = seq_release,
+        .proc_release = aml_drv_proc_release,
 #else
         .owner = THIS_MODULE,
         .open = aml_drv_proc_open,
@@ -928,7 +951,7 @@ static const struct aml_proc_ops drvstate_ops = {
         .proc_open = aml_drv_proc_open,
         .proc_read = drvstateRead,
         .proc_lseek = seq_lseek,
-        .proc_release = seq_release,
+        .proc_release = aml_drv_proc_release,
 #else
         .owner = THIS_MODULE,
         .open = aml_drv_proc_open,
@@ -942,7 +965,7 @@ static const struct aml_proc_ops rvrinfo_ops = {
         .proc_open = aml_drv_proc_open,
         .proc_read = rvrinfoRead,
         .proc_lseek = seq_lseek,
-        .proc_release = seq_release,
+        .proc_release = aml_drv_proc_release,
 #else
         .owner = THIS_MODULE,
         .open = aml_drv_proc_open,
@@ -956,7 +979,7 @@ static const struct aml_proc_ops scanparam_ops = {
             .proc_read = scanparamRead,
             .proc_write = scanparamWrite,
             .proc_lseek = seq_lseek,
-            .proc_release = seq_release,
+            .proc_release = aml_drv_proc_release,
 #else
             .owner = THIS_MODULE,
             .open = aml_drv_proc_open,
@@ -971,7 +994,7 @@ static const struct aml_proc_ops drvreset_ops = {
             .proc_open = aml_drv_proc_open,
             .proc_write = drvResetWrite,
             .proc_lseek = seq_lseek,
-            .proc_release = seq_release,
+            .proc_release = aml_drv_proc_release,
 #else
             .owner = THIS_MODULE,
             .open = aml_drv_proc_open,

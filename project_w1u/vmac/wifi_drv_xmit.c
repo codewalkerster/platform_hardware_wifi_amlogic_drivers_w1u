@@ -559,10 +559,6 @@ drv_aggr_query(struct drv_private *drv_priv, struct aml_driver_nsta *drv_sta, st
     return 0;
 }
 
-int drv_tx_get_mgmt_frm_rate(struct drv_private *drv_priv,
-                    struct wlan_net_vif *wnet_vif,
-                    unsigned char fc_type,unsigned char *rate,unsigned short *flag );
-
 static void drv_tx_get_spec_frm_rate(struct drv_private *drv_priv, struct sk_buff *skbbuf,
     struct drv_txdesc *ptxdesc, struct aml_ratecontrol *ratectrl, unsigned char retry_times)
 {
@@ -570,8 +566,17 @@ static void drv_tx_get_spec_frm_rate(struct drv_private *drv_priv, struct sk_buf
     struct wifi_mac_tx_info *txinfo = ptxdesc->txinfo;
     const struct drv_rate_table *rt = drv_priv->drv_currratetable;
     struct wifi_station *sta = (struct wifi_station *)txinfo->cb.sta;
+    enum wifi_mac_macmode mac_mode;
 
-    drv_tx_get_mgmt_frm_rate(drv_priv, sta->sta_wnet_vif, wh->i_fc[0], &ratectrl[0].vendor_rate_code, &ptxdesc->txdesc_flag);
+    if (ptxdesc->txinfo->b_datapkt)
+    {
+        mac_mode = sta->sta_bssmode;
+    }
+    else
+    {
+        mac_mode = sta->sta_wnet_vif->vm_mac_mode;
+    }
+    drv_tx_get_mgmt_frm_rate(drv_priv, mac_mode, wh->i_fc[0], &ratectrl[0].vendor_rate_code, &ptxdesc->txdesc_flag);
     ratectrl[0].rate_index = drv_rate_findindex_from_ratecode(rt, ratectrl[0].vendor_rate_code);
     ratectrl[1].vendor_rate_code = ratectrl[2].vendor_rate_code = ratectrl[3].vendor_rate_code = ratectrl[0].vendor_rate_code;
     ratectrl[1].bw = ratectrl[2].bw = ratectrl[3].bw = ratectrl[0].bw = ptxdesc->txdesc_flag;
@@ -939,7 +944,8 @@ int drv_tx_start( struct drv_private *drv_priv, struct sk_buff *skbbuf)
             //if p2p ps frame, backup
             //if ps4quiet frame, backup; but if probereq, just send out
             if ((wnet_vif->vm_pstxqueue_flags & WIFINET_PSQUEUE_MASK) &&
-                !(((wnet_vif->vm_pstxqueue_flags & WIFINET_PSQUEUE_MASK) & (WIFINET_PSQUEUE_PS4QUIET | WIFINET_PSQUEUE_NOA)) && (WIFINET_IS_PROBEREQ(wh))))
+                !(((wnet_vif->vm_pstxqueue_flags & WIFINET_PSQUEUE_MASK) & (WIFINET_PSQUEUE_PS4QUIET | WIFINET_PSQUEUE_NOA))
+                && ((WIFINET_IS_PROBEREQ(wh)) || txinfo->b_dpp)))
             {
                 if (wnet_vif->vm_state != WIFINET_S_CONNECTED)
                 {
@@ -1059,6 +1065,13 @@ enum tx_frame_flag drv_set_tx_frame_flag(struct sk_buff *skbbuf)
         ret = TX_P2P_GAS;
     }
 #endif
+
+    if (p2p_pub_act && (p2p_pub_act->category == AML_CATEGORY_PUBLIC)
+            && (p2p_pub_act->action == WIFINET_ACT_PUBLIC_P2P)) {
+        if (p2p_pub_act->oui_type == OUI_TYPE_DPP) {
+            ret = TX_MGMT_DPP_STATUS;
+        }
+    }
 
     if (WIFINET_IS_PROBEREQ(wh)) {
         ret = TX_MGMT_PROBE_REQ;
@@ -1302,6 +1315,7 @@ static void reset_connected_sta_keepalive_time(struct wifi_station *sta)
     sta->sta_inact_time = jiffies;
 }
 
+extern char dpp_pub_action_str[][50];
 static void drv_tx_complete_mgmt_handle(struct drv_private *drv_priv,struct drv_txdesc *ptxdesc,
     unsigned char status, struct wifi_station *sta)
 {
@@ -1310,6 +1324,8 @@ static void drv_tx_complete_mgmt_handle(struct drv_private *drv_priv,struct drv_
     int mgmt_arg;
     static int deauth_fail_time = 0;
     struct wifi_frame *wh = (struct wifi_frame *)ptxdesc->txdesc_ddraddr;
+    struct wifi_mac_p2p_pub_act_frame *p2p_pub_act = NULL;
+    p2p_pub_act = (struct wifi_mac_p2p_pub_act_frame *)((unsigned char *)wh + sizeof(struct wifi_frame));
 
     wnet_vif = sta->sta_wnet_vif;
 
@@ -1363,6 +1379,41 @@ static void drv_tx_complete_mgmt_handle(struct drv_private *drv_priv,struct drv_
 
     } else if (ptxdesc->txdesc_frame_flag == TX_MGMT_ADDBA_RSP) {
         ;
+    }
+
+    if (p2p_pub_act && (p2p_pub_act->category == AML_CATEGORY_PUBLIC) && (p2p_pub_act->action == WIFINET_ACT_PUBLIC_P2P)) {
+        if (p2p_pub_act->oui_type == OUI_TYPE_DPP) {
+            unsigned char dpp_action_subtype = *((char*)wh + sizeof(struct wifi_frame) + 7);
+            if (dpp_action_subtype < 19) {
+                AML_PRINT_LOG_INFO("DPP->%s tx_status:%d flags:0x%x %d\n", dpp_pub_action_str[dpp_action_subtype], status, wnet_vif->vm_flags_ext2, sizeof(dpp_pub_action_str[0]));
+            } else {
+                AML_PRINT_LOG_INFO("subtype:%d\n", dpp_action_subtype);
+            }
+            if (txok) {
+                sta->sta_wnet_vif->vm_p2p->send_tx_status_flag = 1;
+                cfg80211_mgmt_tx_status(sta->sta_wnet_vif->vm_wdev, sta->sta_wnet_vif->vm_p2p->cookie,
+                    sta->sta_wnet_vif->vm_p2p->raw_action_pkt, sta->sta_wnet_vif->vm_p2p->raw_action_pkt_len, txok, GFP_KERNEL);
+                if (wnet_vif->vm_flags_ext2 & WIFINET_FEXT2_DPP_CONNECTION_STATUS_RETRY) {
+                    wnet_vif->vm_flags_ext2 &= ~WIFINET_FEXT2_DPP_CONNECTION_STATUS_RETRY;
+                }
+            } else {
+                if (dpp_action_subtype == 12) {
+                    AML_PRINT_LOG_INFO("retry dpp connection status frame\n");
+                    wnet_vif->vm_flags_ext2 |= WIFINET_FEXT2_DPP_CONNECTION_STATUS_RETRY;
+                    os_timer_ex_start_period(&sta->sta_wnet_vif->vm_actsend, 1000);
+                } else {
+                    sta->sta_wnet_vif->vm_p2p->send_tx_status_flag = 1;
+                    cfg80211_mgmt_tx_status(sta->sta_wnet_vif->vm_wdev, sta->sta_wnet_vif->vm_p2p->cookie,
+                        sta->sta_wnet_vif->vm_p2p->raw_action_pkt, sta->sta_wnet_vif->vm_p2p->raw_action_pkt_len, WIFINET_TX_STATUS_FAIL, GFP_KERNEL);
+                }
+            }
+            wnet_vif->vm_flags_ext2 &= ~WIFINET_FEXT2_DPP_SEND;
+            if (wnet_vif->vm_flags_ext2 & WIFINET_FEXT2_MGMT_RESTORE_CHANNEL) {
+                AML_PRINT_LOG_INFO("dpp frame restore chan\n");
+                wnet_vif->vm_flags_ext2 &= ~WIFINET_FEXT2_MGMT_RESTORE_CHANNEL;
+                wifi_mac_restore_wnet_vif_channel_task(wnet_vif);
+            }
+        }
     }
 
     if ((wnet_vif->pkt_ctrl.flag & WAIT_TX_COMPLETE) && (wnet_vif->pkt_ctrl.txd_frm_type == ptxdesc->txdesc_frame_flag)) {
@@ -1422,6 +1473,12 @@ static void drv_tx_complete_task(struct drv_private *drv_priv, struct drv_txlist
     if (drv_sta == NULL) {
         return;
     }
+
+    if (ptxdesc == NULL) {
+        AML_PRINT_LOG_ERR("ptxdesc == NULL\n");
+        return;
+    }
+
     sta = (struct wifi_station *)drv_sta->net_nsta;
 
     wnet_vif = sta->sta_wnet_vif;
@@ -2101,7 +2158,8 @@ int drv_get_amsdu_supported(struct drv_private *drv_priv, void *nsta, int tid_in
     struct aml_driver_nsta *drv_sta = DRIVER_NODE(nsta);
     struct drv_tx_scoreboard *tid = DRV_GET_TIDTXINFO(drv_sta, tid_index);
 
-    if (drv_priv->drv_config.cfg_txaggr && drv_priv->drv_config.cfg_txamsdu && tid->addba_exchangecomplete) {
+    if (drv_priv->drv_config.cfg_txaggr && drv_priv->drv_config.cfg_txamsdu && tid->addba_exchangecomplete)
+    {
         return tid->addba_amsdusupported;
     }
 
@@ -2547,7 +2605,7 @@ drv_tx_normal(struct drv_private *drv_priv, struct drv_txlist *txlist, struct li
     ptxdesc = list_first_entry(txdesc_list_head, struct drv_txdesc, txdesc_queue);
     wh = (struct wifi_frame *)os_skb_data(ptxdesc->txdesc_mpdu);
 
-    if (!drv_priv->is_mother_channel[vid] && !WIFINET_IS_PROBEREQ(wh)) {
+    if (!drv_priv->is_mother_channel[vid] && !WIFINET_IS_PROBEREQ(wh) && (!ptxdesc->txinfo->b_dpp)) {
         AML_PRINT_LOG_INFO("vid:%d not mother channel, buffer\n", vid);
 
         DRV_TX_NORMAL_BUF_LOCK(drv_priv);
@@ -3366,9 +3424,9 @@ void drv_set_ampduparams( struct drv_private *drv_priv,
 }
 
 int drv_tx_get_mgmt_frm_rate(struct drv_private *drv_priv,
-    struct wlan_net_vif *wnet_vif, unsigned char fc_type,unsigned char *rate,unsigned short *flag)
+    enum wifi_mac_macmode mac_mode, unsigned char fc_type,unsigned char *rate,unsigned short *flag)
 {
-    switch (wnet_vif->vm_mac_mode)
+    switch (mac_mode)
     {
         case WIFINET_MODE_11B:
         case WIFINET_MODE_11BG:
@@ -3393,7 +3451,7 @@ int drv_tx_get_mgmt_frm_rate(struct drv_private *drv_priv,
             break;
 
         default:
-            AML_PRINT_LOG_INFO("<running> vm_mac_mode =%d ERROR\n", wnet_vif->vm_mac_mode);
+            AML_PRINT_LOG_INFO("ERROR, mac_mode:%d\n", mac_mode);
             break;
     }
     return 0;
@@ -3413,6 +3471,10 @@ void drv_special_data_pkt_is_complete(struct drv_txdesc *ptxdesc, unsigned char 
 
     if (mac_pkt_info->b_dhcp) {
         AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_INFO,"[TX], dhcp status:%d, success:%d\n", mac_pkt_info->op_type, is_tx_ok);
+    }
+
+    if (mac_pkt_info->b_icmp) {
+        AML_PRINT(AML_LOG_ID_FILTER,AML_LOG_LEVEL_DEBUG, "[TX], icmp pkt type:%d, success:%d\n", mac_pkt_info->op_type, is_tx_ok);
     }
 }
 

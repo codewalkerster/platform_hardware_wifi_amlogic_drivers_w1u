@@ -304,6 +304,11 @@ wifi_mac_scan_connect(struct wifi_mac_scan_state *ss, struct wlan_net_vif *wnet_
         return 0;
     }
 
+    if (wnet_vif->vm_mainsta && (wnet_vif->vm_mainsta->connect_status != CONNECT_CONNECTING)) {
+        AML_PRINT(AML_LOG_ID_CONNECT,AML_LOG_LEVEL_WARN,"connection stop connect_status:%d\n", wnet_vif->vm_mainsta->connect_status);
+        return 0;
+    }
+
     KASSERT((wnet_vif->vm_opmode == WIFINET_M_IBSS)
         ||(wnet_vif->vm_opmode == WIFINET_M_STA)
         ||(wnet_vif->vm_opmode == WIFINET_M_P2P_DEV)
@@ -594,7 +599,7 @@ int wifi_mac_scan_parse(struct wlan_net_vif *wnet_vif, wifi_mac_ScanIterFunc *f,
 
         } else if (wifi_mac_is_in_clear_environment(wifimac)) {
             //clear environment, set to max gain
-            wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, 174);
+            wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, 174, 1);
             wifimac->scan_noisy_status = WIFINET_S_SCAN_ENV_CLEAR;
 
         } else {
@@ -963,6 +968,7 @@ static int vm_scan_setup_chan(struct wifi_mac_scan_state *ss, struct wlan_net_vi
     struct wifi_channel *c;
     static unsigned char chan_aware_cnt = 0;
     int i = 0;
+    unsigned char roaming_candidate_channel_cnt = 0;
 
 #ifdef CONFIG_P2P
     struct wlan_net_vif *tmpwnet_vif;
@@ -1010,15 +1016,18 @@ static int vm_scan_setup_chan(struct wifi_mac_scan_state *ss, struct wlan_net_vi
         }
 
     } else if (wnet_vif->vm_chan_roaming_scan_flag && !wnet_vif->vm_wmac->wm_scan->roaming_full_scan) {
-        AML_PRINT_LOG_INFO("scan roaming_candidate_chans \n");
         WIFI_ROAMING_CHANNEL_LOCK(ss);
-        ss->scan_last_chan_index = wnet_vif->vm_wmac->wm_scan->roaming_candidate_chans_cnt;
-
-        for (i = 0; i < ss->scan_last_chan_index; i++) {
-            ss->ss_chans[i] = wnet_vif->vm_wmac->wm_scan->roaming_candidate_chans[i].channel;
+        for (i = 0; i < wnet_vif->vm_wmac->wm_scan->roaming_candidate_chans_cnt; i++) {
+            if (wnet_vif->vm_wmac->wm_scan->roaming_candidate_chans[i].channel->chan_cfreq1 != 0) {
+                ss->ss_chans[roaming_candidate_channel_cnt++] = wnet_vif->vm_wmac->wm_scan->roaming_candidate_chans[i].channel;
+            } else {
+                AML_PRINT_LOG_ERR("error, roaming_candidate_chans center freq is zero!\n");
+            }
         }
+        AML_PRINT_LOG_INFO("scan roaming_candidate_chans, expect_num:%d, real_num:%d\n",
+            wnet_vif->vm_wmac->wm_scan->roaming_candidate_chans_cnt, roaming_candidate_channel_cnt);
+        ss->scan_last_chan_index = roaming_candidate_channel_cnt;
         WIFI_ROAMING_CHANNEL_UNLOCK(ss);
-
     } else if (wnet_vif->vm_chan_switch_scan_flag) {
         ss->scan_last_chan_index = 1;
         ss->ss_chans[0] = wnet_vif->vm_switchchan;
@@ -1786,9 +1795,9 @@ void wifi_mac_end_scan( struct wifi_mac_scan_state *ss)
     }
 
     if ((wnet_vif->vm_opmode != WIFINET_M_HOSTAP)
-       && (wnet_vif->vm_opmode != WIFINET_M_P2P_GO)
-       && (wnet_vif->vm_opmode != WIFINET_M_WDS)
-       && (wnet_vif->vm_opmode != WIFINET_M_MONITOR)) {
+        && (wnet_vif->vm_opmode != WIFINET_M_P2P_GO)
+        && (wnet_vif->vm_opmode != WIFINET_M_WDS)
+        && (wnet_vif->vm_opmode != WIFINET_M_MONITOR)) {
         if (wifi_mac_scan_connect(ss, wnet_vif)) {
             before_conn_scan_times = 0;
 
@@ -1838,7 +1847,13 @@ void wifi_mac_end_scan( struct wifi_mac_scan_state *ss)
     ss->ss_nssid = 0;
     memset(ss->ss_ssid,0,sizeof(ss->ss_ssid));
     wifi_mac_scan_access(wnet_vif);
-    wifi_mac_run_delayed_country_switch(wifimac);
+
+    WIFI_ALPHA_LOCK(wifimac);
+    if (wifimac->wm_alpha_set_forbid & SCAN_FORBIDDEN) {
+        wifi_mac_run_delayed_country_switch(wifimac);
+        wifimac->wm_alpha_set_forbid &= ~SCAN_FORBIDDEN;
+    }
+    WIFI_ALPHA_UNLOCK(wifimac);
 
     if (wnet_vif->vm_chan_switch_scan_flag) {
         wifi_mac_check_switch_chan_result(wnet_vif);
@@ -2130,10 +2145,14 @@ int wifi_mac_start_scan(struct wlan_net_vif *wnet_vif, int flags,
 
     wifi_mac_save_ssid(wnet_vif, ss, nssid, ssids);
     if (ss->scan_CfgFlags & WIFINET_SCANCFG_CONNECT) {
-        if ((wnet_vif->vm_opmode == WIFINET_M_STA) && time_before(jiffies, wifimac->wm_lastscan + SCAN_VALID_DEFAULT)) {
-            if (wifi_mac_scan_before_connect(ss, wnet_vif, flags)) {
-                ss->scan_CfgFlags = 0;
-                return 0;
+        if (wnet_vif->vm_opmode == WIFINET_M_STA) {
+            if (time_before(jiffies, wifimac->wm_lastscan + SCAN_VALID_DEFAULT)) {
+                if (wifi_mac_scan_before_connect(ss, wnet_vif, flags)) {
+                    ss->scan_CfgFlags = 0;
+                    return 0;
+                }
+            } else {
+                wnet_vif->vm_connect_scan_entry.se_valid = 0;
             }
         }
     }
@@ -2187,6 +2206,17 @@ int wifi_mac_chk_scan(struct wlan_net_vif *wnet_vif, int flags,
 
     if (wifimac->wm_flags & WIFINET_F_SCAN) {
         return 0;
+    }
+
+    if (wnet_vif->vm_opmode == WIFINET_M_STA) {
+        if (wnet_vif->vm_des_nssid == 0) {
+            AML_PRINT(AML_LOG_ID_CONNECT, AML_LOG_LEVEL_INFO, "scan not trigger as vm_des_bssid is empty\n");
+            return 0;
+        }
+        if ((wnet_vif->vm_mainsta != NULL) && (wnet_vif->vm_mainsta->connect_status != CONNECT_CONNECTING)) {
+            AML_PRINT(AML_LOG_ID_CONNECT,AML_LOG_LEVEL_INFO,"scan not trigger as connect_status:%d\n",wnet_vif->vm_mainsta->connect_status);
+            return 0;
+        }
     }
 
     ss->scan_CfgFlags |= WIFINET_SCANCFG_CONNECT;

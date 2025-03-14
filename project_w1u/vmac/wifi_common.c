@@ -356,12 +356,23 @@ int storeFwlogToFile(u8 *buf, u32 sz)
 {
     int ret = 0;
     unsigned int file_mode;
+    ktime_t curTime = ktime_get();
     char fp_path[64] = {'\0'};
+    static char time_record_buff[100] = {0};
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)) || defined (LINUX_PLATFORM)
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
     mm_segment_t oldfs;
 #endif
     struct file *fp;
+
+    uint64_t remain = 0;
+    uint64_t div_value_s = 0;
+    uint64_t div_value_ms = 0;
+
+    div_value_s = div_u64_rem(curTime, 1000000000, &remain);
+    div_value_ms = div64_u64(remain, 1000);
+
+    sprintf(time_record_buff, "\n<%lld.%lld>:\n", div_value_s, div_value_ms); //record system time eg:<xx.xx s>
 
     if (buf) {
         if (isFirstWrtFwlog) {
@@ -384,7 +395,8 @@ int storeFwlogToFile(u8 *buf, u32 sz)
             set_fs(get_ds());
 #endif
 #endif//5.15
-            ret = writeFile(fp, buf, sz);
+            ret += writeFile(fp, time_record_buff, strlen(time_record_buff));
+            ret += writeFile(fp, buf, sz);
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
             set_fs(oldfs);
 #endif

@@ -33,6 +33,7 @@ namespace FW_NAME
 #include "chip_intf_reg.h"
 
 #include "wifi_mac_com.h"
+#include "wifi_debug_key.h"
 
 #if defined (HAL_FPGA_VER)
 #include "wifi_drv_statistic.h"
@@ -778,6 +779,12 @@ unsigned int phy_set_ucast_key(unsigned char wnet_vif_id,unsigned short StaAid,
     AML_PRINT_LOG_INFO("vid:%d, encrytype:%d, aid:0x%x, kid:%d\n", wnet_vif_id, encryType, StaAid, keyId);
     hal_urep_cnt_init(&hal_priv->uRepCnt[wnet_vif_id][StaAid],encryType);
     hal_pn_win_init(AML_UCAST_TYPE, wnet_vif_id);
+
+    if (gAmlTraceInfo[AML_LOG_ID_KEY].moduleTraceLevel >= AML_LOG_LEVEL_DEBUG) {
+        msleep(100);
+        wifi_mac_key_ctrl_read_key_table_by_condition(wnet_vif_id, StaAid, 1, pMac);
+    }
+
     return 1;
 }
 
@@ -811,6 +818,11 @@ unsigned int phy_set_mcast_key(unsigned char wnet_vif_id, unsigned char *pKey,
     hal_priv->bhalMKeySet[3] = 1;
     hal_mrep_cnt_init(hal_priv,wnet_vif_id,encryType);
     hal_pn_win_init(AML_MCAST_TYPE, wnet_vif_id);
+    if (gAmlTraceInfo[AML_LOG_ID_KEY].moduleTraceLevel >= AML_LOG_LEVEL_DEBUG) {
+        msleep(100);
+        wifi_mac_key_ctrl_read_key_table_by_condition(wnet_vif_id, 0, 0, NULL);
+    }
+
     return 1;
 }
 
@@ -888,14 +900,18 @@ void  phy_scan_cmd(unsigned int data)
     phy_set_param_cmd(MAC_SCAN_CMD,0,data);
 }
 
-void phy_set_channel_rssi(unsigned char rssi)
+void phy_set_channel_rssi(unsigned char rssi, unsigned char flag)
 {
     struct Channel_Switch channel_switch = {0};
 
     channel_switch.Cmd = CHANNEL_SWITCH_CMD;
     channel_switch.rssi = rssi;
     channel_switch.flag = 0;
-    channel_switch.flag |= CHANNEL_RSSI_FLAG;
+    if (flag) {
+        channel_switch.flag |= CHANNEL_HIGH_GAIN_FLAG;
+    } else {
+        channel_switch.flag |= CHANNEL_RSSI_FLAG;
+    }
 
     if (aml_txt_parameter.initial_gain_change_disable) {
         return;
@@ -1018,24 +1034,29 @@ void phy_get_spec_info_cmd(unsigned char cmd, unsigned char vid, unsigned char *
     hi_get_cmd((unsigned char *)&spec_info, len);
     HAL_END_LOCK();
 
-    memcpy(pdate, &spec_info.param[0], len);
+    memcpy(pdate, &spec_info.Cmd, len);
 }
 
 void phy_get_queue_debug_info(unsigned char vid)
 {
     unsigned char res[APP_CMD_PERFIFO_LEN] = {0};
     unsigned char i;
-    struct Queue_Debug_Info *pdata = (unsigned int *)res;
-    phy_get_spec_info_cmd(GET_QUEUE_DEBUG_INFO_CMD, vid, res, sizeof(struct Queue_Debug_Info) * QUEUE_AC_MAX + 2 * sizeof(int));
+    struct Get_Queue_Debug_Info *pdata = (struct Get_Queue_Debug_Info *)res;
+
+    phy_get_spec_info_cmd(GET_QUEUE_DEBUG_INFO_CMD, vid, res, APP_CMD_PERFIFO_LEN);
+
+    AML_PRINT_LOG_INFO("vid:%d, active_idx:%d, wifi_inactive_flag:%d, tx_err_flag:%d, flush_txframe_flag:%d, ps_state:%d, baqueue_cnt:%d, ba_cnt:%d\n",
+                       pdata->common_debug_info.vid, pdata->common_debug_info.active_idx, pdata->common_debug_info.wifi_inactive_flag,
+                       pdata->common_debug_info.tx_error_flag, pdata->common_debug_info.flush_txframe_flag, pdata->common_debug_info.ps_state,
+                       pdata->common_debug_info.baqueue_cnt, pdata->common_debug_info.ba_cnt);
 
     for (i = QUEUE_AC_MIN; i < QUEUE_AC_MAX; i++)
     {
-        AML_PRINT_LOG_INFO("vid:%d, wifi_inactive_flag:%d, queue_idx:%d, state:%d, active_idx:%d, queue_cnt:%d\n",
-                   pdata->vid, pdata->wifi_inactive_flag, pdata->queue_idx, pdata->state, pdata->active_idx, pdata->queue_cnt);
-        pdata++;
+        AML_PRINT_LOG_INFO("queue_idx:%d, state:%d, tx_queue_cnt:%d\n",
+                   pdata->param[i].queue_idx, pdata->param[i].state, pdata->param[i].queue_cnt);
     }
 
-    AML_PRINT_LOG_INFO("queue_debug:0x%08x\n", *(unsigned int *)pdata);
+    AML_PRINT_LOG_INFO("queue_debug:0x%08x, mac_irq_status:0x%x\n", pdata->queue_debug, pdata->mac_irq_status);
 }
 
 //for beamform test
@@ -2091,6 +2112,11 @@ unsigned char parse_cali_param(char *varbuf, int len, struct Cali_Param *cali_pa
     get_s8_item(varbuf, len, "ant_gpio_cfg", &aml_txt_parameter.ant_gpio_cfg);
     get_s8_item(varbuf, len, "wifi_fwlog_by_file", &aml_txt_parameter.wifi_fwlog_by_file);
     get_s8_item(varbuf, len, "channel_2g_20Mhz_only", &aml_txt_parameter.channel_2g_20Mhz_only);
+    get_s8_item(varbuf, len, "country_ie_report", &aml_txt_parameter.country_ie_report);
+    aml_txt_parameter.scan_abort_enable = 0;
+    aml_txt_parameter.scan_interval_thr = 22;
+    get_s8_item(varbuf, len, "scan_abort_enable", &aml_txt_parameter.scan_abort_enable);
+    get_s8_item(varbuf, len, "scan_interval_thr", &aml_txt_parameter.scan_interval_thr);
 
     if (aml_wifi_get_cali_proofing() != INVALID_PARAM_VALUE) {
         cali_proofing = aml_wifi_get_cali_proofing();
@@ -2139,6 +2165,9 @@ unsigned char parse_cali_param(char *varbuf, int len, struct Cali_Param *cali_pa
             cali_param->digital_gain_limit.min_5g, cali_param->digital_gain_limit.max_5g);
      AML_PRINT_LOG_INFO("======>>>>>> wifi_fwlog_by_file = %d\n", aml_txt_parameter.wifi_fwlog_by_file);
      AML_PRINT_LOG_INFO("======>>>>>> channel_2g_20Mhz_only = %d\n", aml_txt_parameter.channel_2g_20Mhz_only);
+     AML_PRINT_LOG_INFO("======>>>>>> country_ie_report = %d\n", aml_txt_parameter.country_ie_report);
+     AML_PRINT_LOG_INFO("======>>>>>> scan_abort_enable = %d\n", aml_txt_parameter.scan_abort_enable);
+     AML_PRINT_LOG_INFO("======>>>>>> scan_interval_thr = %d\n", aml_txt_parameter.scan_interval_thr);
 
     if (!aml_wifi_is_enable_rf_test() && cali_proofing && (efuse_manual_read(0x0b) == 0)) {
         AML_PRINT_LOG_ERR(" the chip is not calibration!\n");
@@ -2541,6 +2570,11 @@ unsigned char hal_ant_sel_en_get(void)
 unsigned char hal_get_channel_2g_20Mhz_only(void)
 {
     return aml_txt_parameter.channel_2g_20Mhz_only;
+}
+
+TXTParameter *hal_get_txt_parameter(void)
+{
+    return &aml_txt_parameter;
 }
 
 #ifdef HAL_SIM_VER

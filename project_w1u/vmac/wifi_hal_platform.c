@@ -645,8 +645,10 @@ int hal_download_sdio_fw_img(void)
     rg_dpll_a5.data = aml_aon_read_reg(RG_DPLL_A5);
     /*bpll not init*/
     if (rg_dpll_a5.b.ro_wifi_bb_pll_done != 1) {
-        bbpll_init();
-        bbpll_start();
+        do {
+            bbpll_init();
+        } while(bbpll_start() == 0);
+
         AML_PRINT_LOG_INFO("bbpll  init ok!\n");
 
     } else {

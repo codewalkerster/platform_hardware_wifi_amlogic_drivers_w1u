@@ -835,7 +835,7 @@ struct hal_layer_ops
     unsigned char *  (*hal_get_config)(void);
     void  (*phy_scan_cmd)(unsigned int data);// 1 start,0 end
     void (*phy_set_tx_power_accord_rssi)(int bw, unsigned short channel, unsigned char rssi, unsigned char power_mode);
-    void (*phy_set_channel_rssi)(unsigned char rssi);
+    void (*phy_set_channel_rssi)(unsigned char rssi, unsigned char flag);
     unsigned int (*phy_pwr_save_mode)(unsigned char wnet_vif_id,unsigned int data);// 1 start,0 end
     unsigned int (*phy_set_rd_support)(unsigned char wnet_vif_id, unsigned int data);
     unsigned int (*phy_set_txlive_time)(unsigned int  txlivetime);//ms

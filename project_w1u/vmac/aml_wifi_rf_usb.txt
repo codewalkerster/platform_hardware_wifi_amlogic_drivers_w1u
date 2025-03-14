@@ -55,6 +55,9 @@ txt_shift_value_5780=100
 
 #config 2g channel bandwidth [0]:20/40Mhz [1]:20Mhz only
 channel_2g_20Mhz_only=0
+#scan abort when TP test
+scan_abort_enable=1
+scan_interval_thr=22
 
 #wifi 2g/5g tx power table
 wftx_pwrtbl_en=1

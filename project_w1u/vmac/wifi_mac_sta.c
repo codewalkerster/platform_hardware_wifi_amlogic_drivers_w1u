@@ -115,6 +115,8 @@ wifi_mac_start_bss_ex(unsigned long arg)
             memcpy(wnet_vif->vm_mainsta->sta_txseqs, obss->sta_txseqs, sizeof(obss->sta_txseqs));
         }
 
+        wnet_vif->vm_mainsta->connect_status = obss->connect_status;
+
         wifi_mac_rm_sta_from_wds_by_sta(&wnet_vif->vm_sta_tbl, obss);
 
         AML_PRINT_LOG_INFO("obss:%p\n", obss);
@@ -656,9 +658,10 @@ void wifi_mac_sta_leave(struct wifi_station *sta, int reassoc)
     AML_PRINT_LOG_INFO("vid:%d, sta:%p, main_sta:%p\n", wnet_vif->wnet_vif_id, sta, wnet_vif->vm_mainsta);
     if (wnet_vif->vm_opmode == WIFINET_M_STA)
     {
+        sta->is_disconnecting = 1;
         wifimac->drv_priv->drv_ops.drv_set_pkt_drop(wifimac->drv_priv, wnet_vif->wnet_vif_id, 1);
         wnet_vif->vm_curchan = WIFINET_CHAN_ERR;
-
+        wifimac->in_throughput = 0;
         if (wifimac->cca_thrd_cfg) {
             wifi_mac_add_work_task(wifimac,cca_thrd_cfg_change_task,NULL,(SYS_TYPE)wnet_vif, DISABLE, 0, 0, 0);
         }
@@ -708,7 +711,7 @@ void wifi_mac_sta_leave(struct wifi_station *sta, int reassoc)
 
         wifimac->scan_noisy_status = WIFINET_S_SCAN_ENV_NOISE;
         wifimac->is_connect_set_gain = 1;
-        wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, 174);
+        wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, 174, 0);
 
         drv_priv = wifimac->drv_priv;
         p2p_wnet_vif = drv_priv->drv_wnet_vif_table[NET80211_P2P_VMAC];
@@ -734,7 +737,7 @@ void wifi_mac_sta_leave(struct wifi_station *sta, int reassoc)
             wnet_vif->vm_phase_flags &= ~PHASE_DISCONNECTING;
             AML_PRINT_LOG_INFO("disconnect complete!\n");
         }
-
+        sta->is_disconnecting = 0;
     }
 
     if ((wnet_vif->vm_phase_flags & PHASE_WAIT_DISCONNECT_RESULT) == 0) {
@@ -932,6 +935,33 @@ struct wifi_station *wifi_mac_get_new_sta_node(struct wifi_station_tbl *nt,
     WIFINET_NODE_UNLOCK(nt);
 
     WME_UAPSD_NODE_TRIGSEQINIT(sta);
+
+    return sta;
+}
+
+struct wifi_station *wifi_mac_get_sta_by_staid(struct wifi_station_tbl *nt,
+    struct wlan_net_vif *wnet_vif, unsigned short staid)
+{
+    struct wifi_station *sta = NULL;
+    struct wifi_station *sta_next = NULL;
+
+    AML_PRINT(AML_LOG_ID_NODE,AML_LOG_LEVEL_DEBUG, "\n");
+
+    WIFINET_NODE_LOCK(nt);
+    list_for_each_entry_safe(sta, sta_next, &nt->nt_nsta, sta_list) {
+        if (sta != NULL) {
+            AML_PRINT(AML_LOG_ID_NODE,AML_LOG_LEVEL_DEBUG, "\n");
+
+            if ((sta->sta_associd == staid) && (sta->wnet_vif_id == wnet_vif->wnet_vif_id)) {
+                AML_PRINT(AML_LOG_ID_NODE,AML_LOG_LEVEL_INFO, "sta_addr:%s aid:%d vid:%d\n", ether_sprintf(sta->sta_macaddr), staid, sta->wnet_vif_id);
+                WIFINET_NODE_UNLOCK(nt);
+                return sta;
+            }
+        }
+    }
+    WIFINET_NODE_UNLOCK(nt);
+
+    AML_PRINT(AML_LOG_ID_NODE,AML_LOG_LEVEL_WARN, "no such sta aid:%d vid:%d\n",staid, wnet_vif->wnet_vif_id);
 
     return sta;
 }
@@ -1487,17 +1517,17 @@ static void wifi_mac_sta_table_rst(struct wifi_station_tbl *nt, struct wlan_net_
 {
     struct wifi_station *sta = NULL, *next = NULL;
 
+    if (match->vm_opmode == WIFI_M_STA) {
+        return;
+    }
     WIFINET_NODE_LOCK(nt);
     list_for_each_entry_safe(sta, next, &nt->nt_nsta, sta_list) {
         struct wlan_net_vif *wnet_vif = sta->sta_wnet_vif;
-
         if ((match != NULL) && (wnet_vif != match))
             continue;
-
         if (sta->sta_associd != 0) {
             vm_StaClearAid(wnet_vif, sta->sta_associd);
         }
-
         if (sta != wnet_vif->vm_mainsta) {
             wifi_mac_rm_sta_from_wds_by_addr(nt,sta->sta_macaddr);
             list_del_init(&sta->sta_list);
@@ -1508,6 +1538,7 @@ static void wifi_mac_sta_table_rst(struct wifi_station_tbl *nt, struct wlan_net_
         }
     }
     WIFINET_NODE_UNLOCK(nt);
+
 }
 
 static void wifi_mac_clear_sta_table(struct wifi_station_tbl *nt)
@@ -2100,10 +2131,11 @@ void wifi_mac_sta_connect(struct wifi_station *sta, int resp)
     }
 
     AML_PRINT_LOG_INFO("****************************************************\n");
-    AML_PRINT_LOG_INFO("sta associated, channel:%d, bw:%d, ssid:%s, mac[%02x:%02x:%02x:%02x:%02x:%02x]\n",
+    AML_PRINT_LOG_INFO("sta associated, channel:%d, bw:%d, ssid:%s, mac[%02x:%02x:%02x:%02x:%02x:%02x] sta_associd:0x%x\n",
         wnet_vif->vm_curchan->chan_pri_num, sta->sta_chbw, sta->sta_essid,
         sta->sta_macaddr[0], sta->sta_macaddr[1], sta->sta_macaddr[2],
-        sta->sta_macaddr[3], sta->sta_macaddr[4], sta->sta_macaddr[5]);
+        sta->sta_macaddr[3], sta->sta_macaddr[4], sta->sta_macaddr[5],
+        sta->sta_associd);
     AML_PRINT_LOG_INFO("****************************************************\n");
 }
 
@@ -2173,12 +2205,12 @@ void wifi_mac_rst_bss(struct wlan_net_vif *wnet_vif)
     struct wifi_mac *wifimac = wnet_vif->vm_wmac;
 
     AML_PRINT_LOG_INFO("vid:%d\n", wnet_vif->wnet_vif_id);
-
     wifi_mac_sta_table_rst(&wnet_vif->vm_sta_tbl, wnet_vif);
     wifi_mac_reset_erp(wifimac, wnet_vif->vm_mac_mode);
     wifi_mac_reset_ht(wifimac);
 
     if (!wnet_vif->vm_mainsta) {
+        AML_PRINT_LOG_INFO("rst\n");
         wnet_vif->vm_mainsta = wifi_mac_get_sta_node(&wnet_vif->vm_sta_tbl, wnet_vif, wnet_vif->vm_myaddr);
         KASSERT(wnet_vif->vm_mainsta != NULL, ("unable to create vm_mainsta"));
         AML_PRINT_LOG_INFO("vid:%d, add vm_mainsta:%p\n", wnet_vif->wnet_vif_id, wnet_vif->vm_mainsta);
@@ -2311,19 +2343,16 @@ wifi_mac_notify_nsta_connect(struct wifi_station *sta, int newassoc)
         WIFINET_ADDR_COPY(wreq.addr.sa_data, sta->sta_bssid);
         wreq.addr.sa_family = ARPHRD_ETHER;
         wireless_send_event(dev, SIOCGIWAP, &wreq, NULL);
-
-       vm_cfg80211_indicate_connect(wnet_vif);
+        vm_cfg80211_indicate_connect(wnet_vif);
 
     }
     else
     {
         AML_PRINT(AML_LOG_ID_CONNECT, AML_LOG_LEVEL_DEBUG, "%s \n","<running>");
-
         memset(&wreq, 0, sizeof(wreq));
         WIFINET_ADDR_COPY(wreq.addr.sa_data, sta->sta_macaddr);
         wreq.addr.sa_family = ARPHRD_ETHER;
         wireless_send_event(dev, IWEVREGISTERED, &wreq, NULL);
-
         vm_cfg80211_indicate_sta_assoc(sta);
     }
 }

@@ -371,7 +371,7 @@ struct driver_ops
     /* connect notifications */
     void        (*connect_start)(struct drv_private *);
     void        (*connect_end)(struct drv_private *);
-    void        (*set_channel_rssi)(struct drv_private *, unsigned char rssi);
+    void        (*set_channel_rssi)(struct drv_private *, unsigned char rssi, unsigned char flag);
     void        (*set_tx_power_accord_rssi)(struct drv_private *, struct hal_channel *, unsigned char rssi, unsigned char power_mode);
 
     /* tx callbacks */

@@ -136,11 +136,11 @@ void phy_stc(void)
     avg_num[2] = reg[6]&0xffff;
     avg_num[3] = (reg[6]>>16)&0xffff;
 
-    AML_PRINT_LOG_INFO("phy statistic(dec): \n");
-    AML_PRINT_LOG_INFO("0) CP1   detect:%8d  avg:%8d  min:%8d  max:%8d  \n", trig_num[0],avg_num[0],min_num[0],max_num[0]);
-    AML_PRINT_LOG_INFO("1) L-SIG   SNR :%8d  avg:%8d  min:%8d  max:%8d  \n", trig_num[1],avg_num[1],min_num[1],max_num[1]);
-    AML_PRINT_LOG_INFO("2) data CRC err:%8d  avg:%8d  min:%8d  max:%8d  \n", trig_num[2],avg_num[2],min_num[2],max_num[2]);
-    AML_PRINT_LOG_INFO("3) data CRC OK:%8d  avg:%8d  min:%8d  max:%8d  \n", trig_num[3],avg_num[3],min_num[3],max_num[3]);
+    AML_PRINT_LOG_INFO("phy stat:\n");
+    AML_PRINT_LOG_INFO("CP1 detect:%d a:%d mi:%d ma:%d\n", trig_num[0],avg_num[0],min_num[0],max_num[0]);
+    AML_PRINT_LOG_INFO("L-SIG SNR :%d a:%d mi:%d ma:%d\n", trig_num[1],avg_num[1],min_num[1],max_num[1]);
+    AML_PRINT_LOG_INFO("data CRC err:%d a:%d mi:%d ma:%d\n", trig_num[2],avg_num[2],min_num[2],max_num[2]);
+    AML_PRINT_LOG_INFO("data CRC OK:%d a:%d mi:%d ma:%d\n", trig_num[3],avg_num[3],min_num[3],max_num[3]);
 
 }
 
@@ -171,7 +171,7 @@ unsigned int cca_busy_check(void)
     {
         v2 = hif->hif_ops.hi_read_word(RG_AGC_OB_CCA_COND01);
         v4 = hif->hif_ops.hi_read_word(RG_AGC_OB_CCA_COND23);
-        AML_PRINT_LOG_INFO("cca: ts 0x%x, ts_num %d, cond0 %d cond1 %d cond2 %d cond3 %d \n",
+        AML_PRINT_LOG_INFO("cca:ts 0x%x,ts_num %d, cond0 %d cond1 %d cond2 %d cond3 %d\n",
                 data3->cca_cond_ts, data3->cca_cond_ts_num,
                 v2 & 0xffff,  (v2 >> 16) & 0xffff,  v4 & 0xffff, (v4 >> 16 ) & 0xffff);
     }

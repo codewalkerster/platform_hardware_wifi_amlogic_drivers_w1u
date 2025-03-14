@@ -1,6 +1,9 @@
 #ifndef __NET80211_CHAN_H__
 #define __NET80211_CHAN_H__
 
+#define WIFI_ALPHA_LOCK(wifimac) OS_SPIN_LOCK_IRQ(&(wifimac)->alpha_lock, (wifimac)->alpha_lock_flag)
+#define WIFI_ALPHA_UNLOCK(wifimac) OS_SPIN_UNLOCK_IRQ(&(wifimac)->alpha_lock, (wifimac)->alpha_lock_flag)
+
 #define WIFI_NEW_CHANNEL_LOCK(wifimac) OS_SPIN_LOCK_IRQ(&(wifimac)->new_channel_lock, (wifimac)->new_channel_lock_flag)
 #define WIFI_NEW_CHANNEL_UNLOCK(wifimac) OS_SPIN_UNLOCK_IRQ(&(wifimac)->new_channel_lock, (wifimac)->new_channel_lock_flag)
 

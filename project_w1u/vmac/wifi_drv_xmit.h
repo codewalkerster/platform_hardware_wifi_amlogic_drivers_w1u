@@ -34,7 +34,7 @@ enum
 
 int aml_tx_hal_buffer_full(struct drv_private *drv_priv, unsigned char queue_id,int txaggrneed,int txprivneed);
 void drv_txlist_task(struct drv_private *drv_priv, struct drv_txlist *txlist);
-int drv_tx_get_mgmt_frm_rate(struct drv_private *drv_priv, struct wlan_net_vif *wnet_vif, unsigned char fc_type,
+int drv_tx_get_mgmt_frm_rate(struct drv_private *drv_priv, enum wifi_mac_macmode mac_mode, unsigned char fc_type,
     unsigned char *rate, unsigned short *flag);
 
 unsigned int drv_txlist_qcnt(struct drv_private *drv_priv, int);

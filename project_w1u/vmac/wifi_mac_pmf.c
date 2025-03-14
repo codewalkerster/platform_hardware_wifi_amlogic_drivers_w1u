@@ -7,7 +7,7 @@
 extern unsigned int fi_ahb_read(unsigned int addr);
 extern void fi_ahb_write(unsigned int addr,unsigned int data);
 
-void wifi_mac_disable_hw_mgmt_decrypt(void) {
+void wifi_mac_disable_hw_mgmt_decrypt_task(SYS_TYPE param1, SYS_TYPE param2, SYS_TYPE parma3, SYS_TYPE param4, SYS_TYPE param5) {
     unsigned int reg_val;
 
     AML_PRINT_LOG_INFO("\n");
@@ -31,6 +31,12 @@ void wifi_mac_disable_hw_mgmt_decrypt(void) {
 
     reg_val = fi_ahb_read(0x00a00354);
     fi_ahb_write(0x00a00354, reg_val | BIT(28));
+}
+
+void wifi_mac_disable_hw_mgmt_decrypt(void)
+{
+    struct wifi_mac *wifimac = wifi_mac_get_mac_handle();
+    wifi_mac_add_work_task(wifimac, wifi_mac_disable_hw_mgmt_decrypt_task, NULL, 0, 0, 0, 0, 0);
 }
 
 unsigned char _bip_ccmp_protect(const unsigned char *key, size_t key_len,

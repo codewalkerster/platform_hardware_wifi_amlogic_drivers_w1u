@@ -17,6 +17,7 @@
 #include <linux/inetdevice.h>
 #include "wifi_cmd_func.h"
 #include "chip_bt_pmu_reg.h"
+#include <net/icmp.h>
 
 #define REKEY_EAPOL_2 0x0302
 
@@ -72,6 +73,10 @@ int wifi_mac_classify(struct wifi_station *sta, struct sk_buff *skb)
         const struct iphdr *ip = (struct iphdr *)(os_skb_data(skb) + sizeof (struct ether_header));
 
         cb->u_tid = (ip->tos & (~INET_ECN_MASK)) >> IP_PRI_SHIFT;
+        if (cb->u_tid == QUEUE_TID_EE)
+        {
+            cb->u_tid = QUEUE_TID_BE;
+        }
         d_wme_ac = TID_TO_WME_AC(cb->u_tid);
         os_skb_set_priority(skb,d_wme_ac);
     }
@@ -156,6 +161,7 @@ void wifi_mac_xmit_pkt_parse(struct sk_buff *skb, struct wifi_mac *wifimac)
     struct iphdr *iphdrp = (struct iphdr *)((unsigned char *)eh + sizeof(struct ether_header));
     struct tcphdr *th = (struct tcphdr *)((unsigned char *)iphdrp + (iphdrp->ihl << 2));
     struct udphdr *uh = (struct udphdr *)((unsigned char *)iphdrp + (iphdrp->ihl << 2));
+    struct icmphdr *icmp_header = (struct icmphdr *)((unsigned char *)iphdrp + (iphdrp->ihl << 2));
     struct wifi_mac_tx_info *txinfo = (struct wifi_mac_tx_info *)os_skb_cb(skb);
     struct wifi_skb_callback *cb = (struct wifi_skb_callback *)skb->cb;
     struct wifi_station *sta = cb->sta;
@@ -167,7 +173,6 @@ void wifi_mac_xmit_pkt_parse(struct sk_buff *skb, struct wifi_mac *wifimac)
     unsigned short offset;
     unsigned short offset_max;
     unsigned long tcp_tx_payload = 0;
-    unsigned char tid_index = 0;
 
     if ((eh->ether_type == __constant_htons(ETHERTYPE_PAE))
         ||(eh->ether_type == __constant_htons(ETHERTYPE_WPI))) {
@@ -216,8 +221,9 @@ void wifi_mac_xmit_pkt_parse(struct sk_buff *skb, struct wifi_mac *wifimac)
             mac_pkt_info->tcp_ack_seqnum = th->ack_seq;
             mac_pkt_info->tcp_src_port = th->source;
             mac_pkt_info->tcp_dst_port = th->dest;
-
+            wifi_mac_tp_test_report(wifimac, __constant_htons(th->source), __constant_htons(th->dest));
         } else if (iphdrp->protocol == IPPROTO_UDP) {
+            sta->sta_wnet_vif->txtp_stat.udp_tx_payload_total += __cpu_to_be16(uh->len) - sizeof(struct udphdr);
             if (((uh->source == 0x4400) && (uh->dest == 0x4300))
                 || ((uh->source == 0x4300) && (uh->dest == 0x4400))) {
                 if (sta->connect_status == CONNECT_DHCP_GET_ACK && sta->sta_wnet_vif->vm_use_static_ip == 0) {
@@ -248,24 +254,20 @@ void wifi_mac_xmit_pkt_parse(struct sk_buff *skb, struct wifi_mac *wifimac)
                     }
                 }
             }
+        wifi_mac_tp_test_report(wifimac, __constant_htons(uh->source), __constant_htons(uh->dest));
+        }else if (iphdrp->protocol == IPPROTO_ICMP) {
+            mac_pkt_info->b_icmp = 1;
+            mac_pkt_info->op_type = icmp_header->type;
+            AML_PRINT(AML_LOG_ID_FILTER,AML_LOG_LEVEL_DEBUG, "icmp pkt type:%d\n", mac_pkt_info->op_type);
         }
-
     } else if (eh->ether_type == __constant_htons(ETHERTYPE_ARP)) {
         mac_pkt_info->b_arp = 1;
         mac_pkt_info->op_type = *(skb->data + ETHER_HDR_LEN + ARP_OPCODE_SHIFT);
     }
 
     if (mac_pkt_info->b_arp || mac_pkt_info->b_dhcp || mac_pkt_info->b_eap) {
-        for (tid_index = 1; tid_index < WME_NUM_TID; tid_index++) {
-            if (!wifimac->drv_priv->drv_ops.aggr_tid_query(wifimac->drv_priv, sta->drv_sta, tid_index)) {
-                cb->u_tid = tid_index;
-                break;
-            }
-        }
-        if (tid_index >= WME_NUM_TID) {
-            AML_PRINT_LOG_INFO("all tid with ba session, set arp dhcp eap tid 2\n");
-            cb->u_tid = 2;
-        }
+        cb->u_tid = QUEUE_TID_EE;
+        txinfo->tid_index = os_skb_get_tid(skb);
     }
 }
 
@@ -1490,6 +1492,16 @@ wifi_mac_add_ssid(unsigned char *frm, const unsigned char *ssid, unsigned int le
     return frm + len;
 }
 
+static unsigned char *
+wifi_mac_add_ds(unsigned char *frm, unsigned short chan_pri_num)
+{
+    *frm++ = WIFINET_ELEMID_DSPARMS;
+    *frm++ = 1;
+    *frm++ = chan_pri_num;
+    return frm;
+}
+
+
 unsigned char *
 wifi_mac_add_erp(unsigned char *frm, struct wifi_mac *wifimac)
 {
@@ -2489,7 +2501,7 @@ int wifi_mac_send_probereq(struct wifi_station *sta, const unsigned char sa[WIFI
                 + 2 + (WIFINET_RATE_MAXSIZE - WIFINET_RATE_SIZE)
                 + sizeof(struct wifi_mac_ie_htcap) //htcaplen
                 + wnet_vif->app_ie[WIFINET_APPIE_FRAME_PROBE_REQ].length
-                + sizeof(struct wifi_mac_ie_vht_cap);
+                + sizeof(struct wifi_mac_ie_vht_cap) + 3;//3 for DS IE
 
     skb = wifi_mac_get_mgmt_frm(wifimac, skb_len);
     if (skb == NULL) {
@@ -2502,7 +2514,10 @@ int wifi_mac_send_probereq(struct wifi_station *sta, const unsigned char sa[WIFI
     frm = wifi_mac_add_ssid(frm, ssid, ssidlen);
     frm = wifi_mac_add_rates(frm, &wnet_vif->vm_legacy_rates);
     frm = wifi_mac_add_xrates(frm, &wnet_vif->vm_legacy_rates);
-
+    if ( WIFINET_IS_CHAN_2GHZ(wifimac->wm_curchan) && wnet_vif->wnet_vif_id == NET80211_MAIN_VMAC)
+    {
+        frm = wifi_mac_add_ds(frm,wifimac->wm_curchan->chan_minpower);
+    }
     if (wnet_vif->vm_mac_mode >= WIFINET_MODE_11N) {
         frm = wifi_mac_add_htcap(frm, sta);
     }

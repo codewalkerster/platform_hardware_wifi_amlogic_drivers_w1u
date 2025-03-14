@@ -612,27 +612,36 @@ void wifi_mac_set_country_regdom_task(SYS_TYPE param1, SYS_TYPE param2, SYS_TYPE
     struct wlan_net_vif *selected_wnet_vif = drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC];
     struct wlan_net_vif *wnet_vif = NULL;//for iterator
     struct wifi_channel old_chans[WIFI_MAX_VID] = {0};
+    struct wifi_channel saved_roaming_chans[ROAMING_CANDIDATE_CHAN_MAX] = {0};
     struct wifi_channel *pchan = NULL;
+    struct wifi_channel *roaming_chan = NULL;
+    unsigned char roaming_chan_cnt = 0;
     unsigned char alpha[3] = {param1, param2, 0};
     unsigned char cur_txpwrplan = 0;
+    unsigned char idx = 0;
 
     if ((wifimac->wm_nrunning == 1) && (drv_priv->drv_wnet_vif_table[NET80211_P2P_VMAC]->vm_state == WIFINET_S_CONNECTED)) {
         selected_wnet_vif = drv_priv->drv_wnet_vif_table[NET80211_P2P_VMAC];
     }
 
-    AML_PRINT_LOG_INFO("alpha=%s\n", alpha);
     if ((alpha[0] == wifimac->wm_country.iso[0]) && (alpha[1] == wifimac->wm_country.iso[1])) {
         AML_PRINT_LOG_ERR("no need to set country code due to the same country code\n");
-        return;
+        goto end;
     }
 
     if (preempt_scan(selected_wnet_vif->vm_ndev, 100, 100) != 0) {
         AML_PRINT_LOG_INFO("delay country switch: target country %s\n", alpha);
         wifimac->wm_alpha_pending = 1;
-        wifimac->wm_alpha_target[0] = alpha[0];
-        wifimac->wm_alpha_target[1] = alpha[1];
-        wifimac->wm_alpha_target[2] = '\0';
-        return;
+        goto end;
+    }
+
+    WIFI_ALPHA_LOCK(wifimac);
+    if ((alpha[0] != wifimac->wm_alpha_target[0]) || (alpha[1] != wifimac->wm_alpha_target[1])) {
+        AML_PRINT_LOG_INFO("alpha [%s] has beed covered by target alpha [%s], waste country [%s]\n", alpha, wifimac->wm_alpha_target, alpha);
+        alpha[0] = wifimac->wm_alpha_target[0];
+        alpha[1] = wifimac->wm_alpha_target[1];
+    } else {
+        AML_PRINT_LOG_INFO("alpha=%s\n", alpha);
     }
 
     WIFI_CHANNEL_LOCK(wifimac);
@@ -644,7 +653,30 @@ void wifi_mac_set_country_regdom_task(SYS_TYPE param1, SYS_TYPE param2, SYS_TYPE
         }
     }
     cur_txpwrplan = drv_priv->drv_config.cfg_txpoweplan;
+
+    // save roaming candidate channels and repointer after country set
+    WIFI_ROAMING_CHANNEL_LOCK(wifimac->wm_scan);
+    for (idx = 0; idx < wifimac->wm_scan->roaming_candidate_chans_cnt; idx ++) {
+        roaming_chan = wifimac->wm_scan->roaming_candidate_chans[idx].channel;
+        if (WIFINET_IS_CHAN_ERR(roaming_chan)) {
+            break;
+        }
+        saved_roaming_chans[idx] = *roaming_chan;
+        roaming_chan_cnt ++;
+    }
     wifi_mac_set_country(wifimac, alpha);
+    wifimac->wm_scan->roaming_candidate_chans_cnt = 0;
+    for (idx = 0; idx < roaming_chan_cnt; idx ++) {
+        pchan = saved_roaming_chans + idx;
+        roaming_chan = wifi_mac_find_chan_unlock(wifimac, pchan->chan_pri_num, pchan->chan_bw, pchan->chan_cfreq1);
+        if (roaming_chan == NULL) {
+            continue;
+        }
+        wifimac->wm_scan->roaming_candidate_chans[idx].channel = roaming_chan;
+        wifimac->wm_scan->roaming_candidate_chans_cnt ++;
+    }
+    WIFI_ROAMING_CHANNEL_UNLOCK(wifimac->wm_scan);
+
     list_for_each_entry(wnet_vif, &wifimac->wm_wnet_vifs, vm_next) {
         pchan = &(old_chans[wnet_vif->wnet_vif_id]);
         if (pchan->chan_cfreq1 != 0) {
@@ -681,6 +713,14 @@ void wifi_mac_set_country_regdom_task(SYS_TYPE param1, SYS_TYPE param2, SYS_TYPE
 
     WIFI_CHANNEL_UNLOCK(wifimac);
 
+    wifimac->wm_alpha_set_in_progress = 0;
+    WIFI_ALPHA_UNLOCK(wifimac);
+
+    return;
+end:
+    WIFI_ALPHA_LOCK(wifimac);
+    wifimac->wm_alpha_set_in_progress = 0;
+    WIFI_ALPHA_UNLOCK(wifimac);
     return;
 }
 
@@ -1692,7 +1732,7 @@ int aml_wpa_set_channel_rssi(struct wlan_net_vif *wnet_vif, char* buf, int len)
         return -EINVAL;
     }
     data = simple_strtol(arg[1], NULL, 0);
-    wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, data);
+    wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, data, 0);
 
     FREE(arg, "cmd_arg");
     return 0;

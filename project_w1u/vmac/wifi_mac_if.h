@@ -112,7 +112,8 @@ wifi_macwnet_vif_get_opmode(struct wlan_net_vif *wnet_vif)
 
 #define WIFINET_NODE_USEAMPDU(_sta) \
     (((_sta)->sta_flags & WIFINET_NODE_HT) != 0) && \
-    (((_sta)->sta_wnet_vif->vm_flags_ext & WIFINET_FEXT_AMPDU) != 0)
+    (((_sta)->sta_wnet_vif->vm_flags_ext & WIFINET_FEXT_AMPDU) != 0)&& \
+    (((_sta)->sta_flags & WIFINET_NODE_QOS) != 0)
 
 
 static __inline void
@@ -392,6 +393,7 @@ void wifi_mac_restore_wnet_vif_channel_task(struct wlan_net_vif *wnet_vif);
 void wifi_mac_roaming_trigger(struct wlan_net_vif * wnet_vif);
 void wifi_mac_sm_switch (SYS_TYPE param1,SYS_TYPE param2,SYS_TYPE param3,SYS_TYPE param4,SYS_TYPE param5);
 int wifi_mac_trigger_recovery(void *arg);
+void wifi_mac_tp_test_report(struct wifi_mac * wifimac, unsigned short src, unsigned short dest);
 int wifi_mac_monitor_tp_rate(void *arg);
 int wifi_mac_ant_select(void *arg);
 int wifi_mac_ant_rssi_measure(void *arg);
@@ -413,4 +415,6 @@ void wifi_mac_set_fwlog_ex(SYS_TYPE param1,SYS_TYPE param2,
     SYS_TYPE param3,SYS_TYPE param4,SYS_TYPE param5);
 void wifi_mac_get_repair_level(void);
 void wifi_mac_run_delayed_country_switch(struct wifi_mac * wifimac);
+void wifi_mac_show_per_info(void);
+int wifi_mac_cal_noise(int rssi,unsigned int snr);
 #endif

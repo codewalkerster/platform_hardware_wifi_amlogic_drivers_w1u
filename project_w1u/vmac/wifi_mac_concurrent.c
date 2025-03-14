@@ -42,7 +42,9 @@ int concurrent_change_channel_timeout(void * data)
     AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_INFO, "\n" );
 
     wifimac->wm_p2p_connection_protect = 0;
+    WIFI_ALPHA_LOCK(wifimac);
     wifi_mac_run_delayed_country_switch(wifimac);
+    WIFI_ALPHA_UNLOCK(wifimac);
     wifi_mac_add_work_task(wifimac, concurrent_change_channel_timeout_ex,NULL,(SYS_TYPE)data,0,0,0,0 );
     return OS_TIMER_NOT_REARMED;
 }

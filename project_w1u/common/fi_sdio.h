@@ -30,8 +30,10 @@
 #define PHY_REG_AGC_BASE     0x00a08000
 #define PHY_AGC_BUSY_FSM          (PHY_REG_AGC_BASE+0x34)
 #define DF_AGC_REG_A12 (PHY_REG_AGC_BASE + 0x30)
+#define DF_AGC_REG_A14 (PHY_REG_AGC_BASE + 0x38) //agc
 #define DF_AGC_REG_A27 (PHY_REG_AGC_BASE + 0x6c)
 #define DF_AGC_REG_A29 (PHY_REG_AGC_BASE + 0x74)
+#define DF_AGC_REG_A30 (PHY_REG_AGC_BASE + 0x78)//for ANT loss cfg
 #define REG_STF_AC_Q_THR (PHY_REG_AGC_BASE + 0x5c)
 #define REG_ED_THR_DB (PHY_REG_AGC_BASE + 0x74)
 

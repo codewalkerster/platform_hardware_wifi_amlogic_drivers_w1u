@@ -5,7 +5,7 @@
 #include "wifi_cmd_func.h"
 #include "wifi_mac_chan.h"
 
-unsigned char regdom_scheme = REGDOM_CUST_DRVDEF;
+unsigned char regdom_scheme = REGDOM_CORE_MGMT;
 
 static const struct ieee80211_regdomain regdom_global = {
     .n_reg_rules = 7,
@@ -345,24 +345,36 @@ void aml_apply_country(struct wiphy *wiphy, unsigned char* alpha2, unsigned char
     aml_regdom_alpha2str(alpha2, country);
     aml_regdom_str2alpha(country, copy_alpha2);
 
-    if (country[0] == wifimac->wm_country.iso[0] && country[1] == wifimac->wm_country.iso[1]) {
-        AML_PRINT_LOG_INFO("no need to set country code due to the same country code %s\n", country);
-        return;
-    }
-
-    AML_PRINT_LOG_INFO("regdom alpha2 set to <%s>\n", country);
-
     if (IS_REGD_USE_DB()) {
         if (custom) {
             aml_reset_wiphy_channels(wiphy);
             aml_regd_notify(wiphy, copy_alpha2);
         }
+    }
+
+    WIFI_ALPHA_LOCK(wifimac);
+
+    if (IS_REGD_USE_DB()) {
         WIFI_NEW_CHANNEL_LOCK(wifimac);
         wifimac->wm_new_nchans = 0;
         memset(wifimac->wm_new_channels, 0x00, sizeof(wifimac->wm_new_channels));
         ret = aml_resolution_chan_info(wiphy, &(wifimac->wm_new_nchans), wifimac->wm_new_channels);
         WIFI_NEW_CHANNEL_UNLOCK(wifimac);
     }
+
+    wifimac->wm_alpha_target[0] = country[0];
+    wifimac->wm_alpha_target[1] = country[1];
+    wifimac->wm_alpha_target[2] = '\0';
+
+    if (wifimac->wm_alpha_set_forbid) {
+        wifimac->wm_alpha_pending = 1;
+        AML_PRINT_LOG_INFO("country switch forbidden, save pending country [%s]\n", country);
+        WIFI_ALPHA_UNLOCK(wifimac);
+        return;
+    } else {
+        wifimac->wm_alpha_set_in_progress = 1;
+    }
+    WIFI_ALPHA_UNLOCK(wifimac);
 
     wifi_mac_set_country_regdom(country);
 }

@@ -403,8 +403,12 @@ struct wifi_mac
     struct wifi_mac_wme_state wm_wme[DEFAULT_MAX_VMAC];
     int wm_ac2q[WME_NUM_AC];
 
+    unsigned char wm_alpha_set_forbid;
+    unsigned char wm_alpha_set_in_progress;
     unsigned char wm_alpha_pending;
     unsigned char wm_alpha_target[3];
+    spinlock_t alpha_lock;
+    unsigned long alpha_lock_flag;
 
     int wm_new_nchans;
     struct wifi_channel wm_new_channels[WIFINET_CHAN_MAX * 2 + 1];
@@ -563,6 +567,8 @@ struct wifi_mac
     unsigned char cca_thrd_cfg;
     spinlock_t wm_txlist_flush_lock;
     unsigned char txlist_flush_process;
+    unsigned char tp_pkt_flag;
+    unsigned short in_throughput;
 };
 
 struct wifi_net_vif_ops
@@ -630,6 +636,14 @@ struct wlan_tp_stat
 {
     unsigned short vm_tx_speed;
     unsigned long tcp_tx_payload_total;
+    unsigned short vm_udp_tx_speed;
+    unsigned long udp_tx_payload_total;
+};
+
+struct wlan_rxtp_stat
+{
+    unsigned short vm_udp_rx_speed;
+    unsigned long udp_rx_payload_total;
 };
 
 enum
@@ -809,6 +823,7 @@ struct wlan_net_vif
     unsigned short vm_vhtop_basic_mcs;
 
     struct wlan_tp_stat txtp_stat;
+    struct wlan_rxtp_stat rxtp_stat;
     unsigned short vm_rx_speed;
     unsigned char vm_change_rate_enable;
     unsigned long long pn_window[2][2];
@@ -888,6 +903,9 @@ struct wlan_net_vif
 #define WIFINET_FEXT_COUNTRYIE 0x40000000
 #define WIFINET_FEXT_WMETUN 0x80000000
 
+#define WIFINET_FEXT2_MGMT_RESTORE_CHANNEL 0x00000001
+#define WIFINET_FEXT2_DPP_SEND 0x00000002
+#define WIFINET_FEXT2_DPP_CONNECTION_STATUS_RETRY 0x00000004
 #define WIFINET_FEXT2_PUREB 0x10000000
 #define WIFINET_FEXT2_PUREG 0x20000000
 #define WIFINET_FEXT2_PUREN 0x40000000

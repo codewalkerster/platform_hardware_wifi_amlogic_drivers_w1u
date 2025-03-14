@@ -251,6 +251,7 @@ struct wifi_station
     int32_t sta_avg_data_rssi;
     int32_t sta_avg_snr;
     unsigned int sta_last_txrate;  //kbps
+    unsigned char last_txrate_bw;
     unsigned int sta_last_rxrate;  //kbps
     unsigned char sta_rxrate_index;
     unsigned char last_rxrate_bw;
@@ -417,6 +418,9 @@ void wifi_mac_rst_main_sta(struct wlan_net_vif *wnet_vif);
 int wifi_mac_connect(struct wlan_net_vif *, struct wifi_scan_info *);
 void wifi_mac_sta_leave(struct wifi_station *, int reassoc);
 struct wifi_station *wifi_mac_get_sta_node(struct wifi_station_tbl *, struct wlan_net_vif *, const unsigned char *);
+struct wifi_station *wifi_mac_get_sta_by_staid(struct wifi_station_tbl *nt,
+    struct wlan_net_vif *wnet_vif, unsigned short staid);
+
 struct wifi_station *wifi_mac_get_new_sta_node(struct wifi_station_tbl *nt, struct wlan_net_vif *wnet_vif, const unsigned char *macaddr);
 struct wifi_station *wifi_mac_tmp_nsta(struct wlan_net_vif *, const unsigned char *);
 struct wifi_station *wifi_mac_bup_bss(struct wlan_net_vif *, const unsigned char *);
@@ -462,6 +466,7 @@ int wifi_mac_sta_arp_agent_ex (SYS_TYPE param1, SYS_TYPE param2,SYS_TYPE param3,
 #define WIFINET_QLOCK_INIT(_ic, _name) spin_lock_init(&(_ic)->wm_queuelock)
 #define WIFINET_QLOCK(_ic) OS_SPIN_LOCK_IRQ(&(_ic)->wm_queuelock, (_ic)->wm_queuelock_flags);
 #define WIFINET_QUNLOCK(_ic) OS_SPIN_UNLOCK_IRQ(&(_ic)->wm_queuelock,  (_ic)->wm_queuelock_flags);
+
 
 #define WIFINET_BEACONLOCK_INIT(_ic, _name) spin_lock_init(&(_ic)->wm_scanlock)
 #define WIFINET_BEACONLOCK(_ic) OS_SPIN_LOCK_IRQ(&(_ic)->wm_scanlock, (_ic)->wm_scanlock_flags);

@@ -224,4 +224,6 @@ void ie_dbg(unsigned char *ie ) ;
 void aml_set_all_debug_level(DEBUG_LEVEL level);
 void aml_set_debug_level(MODULE_ID module_id, DEBUG_LEVEL level);
 void wifi_debug_dump_data(unsigned char* data, unsigned int size, unsigned char bytes_per_line);
+unsigned char wifi_debug_is_arp_pkt(struct sk_buff * skb);
+unsigned char wifi_debug_get_tid_in_qos_ctrl(void *mac_header);
 #endif

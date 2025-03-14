@@ -1000,6 +1000,8 @@ void wifi_mac_process_beacon_miss_ex(SYS_TYPE arg)
         wnet_vif->vm_state != WIFINET_S_CONNECTED)
         return;
 
+
+    wifi_mac_show_per_info();
     /*
     * Actually, we will lost at least 25 beacons here,
     * because 'vm_swbmiss' timeout is 2500ms.

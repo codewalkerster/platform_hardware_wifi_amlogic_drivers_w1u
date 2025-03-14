@@ -17,17 +17,17 @@
 #include "wifi_mac_rx_status.h"
 
 //powersave presleep timer
-#define WIFINET_PWRSAVE_TIMER_INTERVAL   200
+#define WIFINET_PWRSAVE_TIMER_INTERVAL              200
 
 //INACTIVITYTIME for WIFINET_PWRSAVE_LOW
-#define WIFINET_PS_LOW_INACTIVITYTIME               800
+#define WIFINET_PS_LOW_INACTIVITYTIME               400
 //INACTIVITYTIME for WIFINET_PWRSAVE_NORMAL
-#define WIFINET_PS_NORMAL_INACTIVITYTIME            1200
+#define WIFINET_PS_NORMAL_INACTIVITYTIME            600
 //INACTIVITYTIME for WIFINET_PWRSAVE_MAXIMUM
 #define WIFINET_PS_MAXIMUM_INACTIVITYTIME           200
 
 //after wakeup from beacon timer, sta need to wait for the incoming beacon
-#define WIFINET_PWRSAVE_WAITBEACON_TIMER_INTERVAL       70
+#define WIFINET_PWRSAVE_WAITBEACON_TIMER_INTERVAL   70
 //after send trigger, sta need to wait for the response
 #define WIFINET_PWRSAVE_PSTRIGGER_TIMER_INTERVAL    80
 

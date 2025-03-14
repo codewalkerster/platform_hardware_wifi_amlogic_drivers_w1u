@@ -1,5 +1,6 @@
 
 #include "wifi_debug.h"
+#include "wifi_mac_com.h"
 
 const char * dbg_level_str[] = { "E", "W", "I", "D"};
 
@@ -303,4 +304,22 @@ void wifi_debug_dump_data(unsigned char* data, unsigned int size, unsigned char 
         offset += bytes_per_line;
         printk("%s", line_data);
     }
+}
+
+unsigned char wifi_debug_is_arp_pkt(struct sk_buff * skb)
+{
+    struct wifi_mac_tx_info *txinfo = (struct wifi_mac_tx_info *)os_skb_cb(skb);
+    struct wifi_mac_pkt_info *mac_pkt_info = &txinfo->ptxdesc->drv_pkt_info.pkt_info[0];
+
+    return mac_pkt_info->b_arp;
+}
+
+unsigned char wifi_debug_get_tid_in_qos_ctrl(void *mac_header)
+{
+    struct wifi_qos_frame *qh = (struct wifi_qos_frame *)mac_header;
+    unsigned char qos_ctrl0;
+
+    qos_ctrl0 = qh->i_qos[0];
+
+    return qos_ctrl0 & 0xf;
 }

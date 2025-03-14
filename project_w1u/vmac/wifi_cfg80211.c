@@ -570,6 +570,7 @@ cfg80211_informbss_cb(void *arg, const struct wifi_scan_info *se)
     struct wiphy *wiphy = wnet_vif->vm_wdev->wiphy;
     const struct wifi_scan_info *lse = se;
     struct scaninfo_table *st = wifimac->wm_scan->ScanTablePriv;
+    TXTParameter *aml_txt_parameter = NULL;
 
     int ret = 0;
     struct ieee80211_channel *notify_channel;
@@ -623,6 +624,16 @@ cfg80211_informbss_cb(void *arg, const struct wifi_scan_info *se)
         ret = -ENOMEM;
         goto exit;
     }
+
+    aml_txt_parameter = hal_get_txt_parameter();
+
+    if (!aml_txt_parameter)
+    {
+        AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_ERROR, "ERROR NOMEM\n");
+        ret = -ENOMEM;
+        goto exit;
+    }
+
     pbuf = buf;
 #if (CFG80211_VERSION_CODE < KERNEL_VERSION(3,18,0))
     p80211mgmt = (struct wifi_frame *)buf;
@@ -665,7 +676,8 @@ cfg80211_informbss_cb(void *arg, const struct wifi_scan_info *se)
         len += ielen;
     }
 
-    if (lse->SI_country_ie[1]) {
+    if (lse->SI_country_ie[1] && aml_txt_parameter->country_ie_report)
+    {
         ielen = wifi_mac_copy_ie(pbuf, lse->SI_country_ie, SCANINFO_IE_DATA_LENGTH);
         pbuf += ielen;
         len += ielen;
@@ -1534,6 +1546,11 @@ void vm_cfg80211_indicate_connect(struct wlan_net_vif *wnet_vif)
         wnet_vif->vm_state,pwdev->iftype);
     pwdev_priv->connect_request = NULL;
 
+    if (sta->connect_status == CONNECT_CONNECTED) {
+        AML_PRINT(AML_LOG_ID_CFG80211,AML_LOG_LEVEL_INFO,"already connected\n");
+        return;
+    }
+
 #if (CFG80211_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
     if (channel <= AML_2G_CHANNELS_NUM)
         freq = aml_ieee80211_chan_to_frq(channel, IEEE80211_BAND_2GHZ);
@@ -1563,7 +1580,7 @@ void vm_cfg80211_indicate_connect(struct wlan_net_vif *wnet_vif)
     cfg80211_connect_result(wnet_vif->vm_ndev, sta->sta_bssid,  wnet_vif->assocreq_ie.ie, wnet_vif->assocreq_ie.length, wnet_vif->assocrsp_ie.ie,
         wnet_vif->assocrsp_ie.length, WLAN_STATUS_SUCCESS, GFP_ATOMIC);
 #endif
-
+    sta->connect_status = CONNECT_CONNECTED;
     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO,"wnet_vif->vm_state=%d\n",wnet_vif->vm_state);
     return;
 }
@@ -1572,11 +1589,14 @@ static void
 vm_cfg80211_connect_timeout_task(SYS_TYPE net)
 {
     struct wlan_net_vif *wnet_vif = (struct wlan_net_vif*)net;
-    vm_cfg80211_indicate_disconnect(wnet_vif);
-    wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
+
     wnet_vif->vm_des_nssid = 0;
     wnet_vif->vm_curchan = WIFINET_CHAN_ERR;
     memset(wnet_vif->vm_des_ssid, 0, IV_SSID_SCAN_AMOUNT*sizeof(struct wifi_mac_ScanSSID));
+
+    vm_cfg80211_indicate_disconnect(wnet_vif);
+    wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
+
     return;
 }
 
@@ -1633,11 +1653,19 @@ void vm_cfg80211_indicate_disconnect(struct wlan_net_vif *wnet_vif)
     struct wireless_dev *pwdev = wnet_vif->vm_wdev;
     struct vm_wdev_priv *pwdev_priv = wdev_to_priv(pwdev);
     struct wifi_station *sta = wnet_vif->vm_mainsta;
+    struct wifi_mac *wifimac = wnet_vif->vm_wmac;
 #if (CFG80211_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
     struct cfg80211_bss *bss = NULL;
 #endif
 
     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "<%s>\n", VMAC_DEV_NAME(wnet_vif));
+
+    WIFI_ALPHA_LOCK(wifimac);
+    if (wifimac->wm_alpha_set_forbid & CONNECT_FORBIDDEN) {
+        wifi_mac_run_delayed_country_switch(wnet_vif->vm_wmac);
+        wifimac->wm_alpha_set_forbid &= ~CONNECT_FORBIDDEN;
+    }
+    WIFI_ALPHA_UNLOCK(wifimac);
 
     if ((pwdev->iftype != NL80211_IFTYPE_STATION)
 #ifdef CONFIG_P2P
@@ -1662,6 +1690,11 @@ void vm_cfg80211_indicate_disconnect(struct wlan_net_vif *wnet_vif)
     if (sta->sta_wfd_ie && wnet_vif->vm_wmac->is_miracast_connect) {
         wnet_vif->vm_wmac->is_miracast_connect = 0;
         AML_PRINT_LOG_INFO("clear is_miracast_connect = %d \n",wnet_vif->vm_wmac->is_miracast_connect);
+    }
+
+    if (sta->connect_status == CONNECT_DISCONNECTED) {
+        AML_PRINT(AML_LOG_ID_CFG80211,AML_LOG_LEVEL_INFO,"already disconnected\n");
+        return;
     }
 
     if ((wnet_vif->vm_state > WIFINET_S_SCAN) && (wnet_vif->vm_state < WIFINET_S_CONNECTED)) {
@@ -1701,6 +1734,7 @@ void vm_cfg80211_indicate_disconnect(struct wlan_net_vif *wnet_vif)
     if (wnet_vif->vm_recovery_state != WIFINET_RECOVERY_END) {
         wifi_mac_vif_restore_end(wnet_vif);
     }
+    sta->connect_status = CONNECT_DISCONNECTED;
     os_timer_ex_cancel(&wnet_vif->vm_mgtsend, CANCEL_SLEEP);
     os_timer_ex_cancel(&pwdev_priv->connect_timeout, CANCEL_SLEEP);
     wifi_mac_scan_access(wnet_vif);
@@ -1958,6 +1992,7 @@ exit:
     return ret;
 }
 
+static unsigned long last_scan_time = 0;
 static int
 vm_cfg80211_scan(struct wiphy *wiphy, struct cfg80211_scan_request *request)
 {
@@ -1977,6 +2012,9 @@ vm_cfg80211_scan(struct wiphy *wiphy, struct cfg80211_scan_request *request)
     int ret_startscan = 0;
     unsigned int delay_time_ms = 0;
     struct wifi_mac_app_ie_t *probereq_app_ie = &wnet_vif->app_ie[WIFINET_APPIE_FRAME_PROBE_REQ];
+    unsigned long last_time = 0;
+    last_time = last_scan_time;
+    last_scan_time = jiffies;
 
     if (aml_wifi_is_enable_rf_test())
         return 0;
@@ -1987,8 +2025,9 @@ vm_cfg80211_scan(struct wiphy *wiphy, struct cfg80211_scan_request *request)
     }
 
     if (wnet_vif->vm_opmode == WIFINET_M_STA) {
-        if (!wifi_mac_scan_check_available(wnet_vif)) {
-            AML_PRINT_LOG_ERR("rejected scan due to scan not available\n");
+        if ((aml_txt_parameter.scan_abort_enable && (wifimac->in_throughput) && (time_after(jiffies, last_time + msecs_to_jiffies(aml_txt_parameter.scan_interval_thr*1000)))) ||
+            (!wifi_mac_scan_check_available(wnet_vif))) {
+            AML_PRINT_LOG_ERR("rejected scan due to scan not available %d\n",wifi_mac_scan_check_available(wnet_vif));
 
             OS_SPIN_LOCK(&pwdev_priv->scan_req_lock);
             if (pwdev_priv->scan_request == NULL) {
@@ -2006,7 +2045,9 @@ vm_cfg80211_scan(struct wiphy *wiphy, struct cfg80211_scan_request *request)
     if ((wnet_vif->vm_p2p_support == 0) && wifimac->wm_p2p_connection_protect) {
         if (time_after(jiffies, wifimac->wm_p2p_connection_protect_period)) {
             wifimac->wm_p2p_connection_protect = 0;
+            WIFI_ALPHA_LOCK(wifimac);
             wifi_mac_run_delayed_country_switch(wifimac);
+            WIFI_ALPHA_UNLOCK(wifimac);
 
         } else {
             AML_PRINT_LOG_ERR("rejected scan due to p2p negotiation\n");
@@ -2025,6 +2066,16 @@ vm_cfg80211_scan(struct wiphy *wiphy, struct cfg80211_scan_request *request)
             }
         }
     }
+
+    WIFI_ALPHA_LOCK(wifimac);
+    if (wifimac->wm_alpha_set_in_progress) {
+        AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_WARN, "reject scan due to country switch in progress\n");
+        WIFI_ALPHA_UNLOCK(wifimac);
+        return -EINVAL;
+    } else {
+        wifimac->wm_alpha_set_forbid |= SCAN_FORBIDDEN;
+    }
+    WIFI_ALPHA_UNLOCK(wifimac);
 
     if ((wifimac->wm_nrunning == 1) && (wifimac->is_miracast_connect == 1) &&
         (drv_priv->drv_wnet_vif_table[NET80211_P2P_VMAC]->vm_state == WIFINET_S_CONNECTED)) {
@@ -2699,13 +2750,22 @@ static int vm_cfg80211_del_key(struct wiphy *wiphy, struct net_device *dev, int 
         goto exit;
     }
 
-    while (total_delay < 1000 &&
-          ((sta->connect_status != CONNECT_IDLE) || (!drv_priv->hal_priv->hal_ops.hal_tx_empty()))) {
-            if (wnet_vif->vm_opmode == WIFINET_M_HOSTAP && sta->is_disconnecting == 0) {
-                break;
-            }
-            msleep(10);
-            total_delay += 10;
+    while (total_delay < 1000) {
+
+        if ((wnet_vif->vm_opmode == WIFINET_M_HOSTAP) &&
+            ((sta->is_disconnecting == 0) || (drv_priv->hal_priv->hal_ops.hal_tx_empty()))) {
+            break;
+        }
+
+        if ((wnet_vif->vm_opmode == WIFINET_M_STA)
+            && (drv_priv->hal_priv->hal_ops.hal_tx_empty())
+            && ((sta->connect_status == CONNECT_IDLE) || (sta->connect_status == CONNECT_DISCONNECTED)))
+        {
+            break;
+        }
+
+        msleep(10);
+        total_delay += 10;
     }
 
     if (sta == wnet_vif->vm_mainsta && key_index == wnet_vif->vm_def_txkey) {
@@ -2854,6 +2914,7 @@ static int vm_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
     struct cfg80211_connect_params *lsme = sme;
 
     int ret = 0;
+    unsigned int delay_ms = 0;
     unsigned char *rsn_ie = NULL;
     unsigned int rsn_ie_len = 0;
     struct wifi_mac *wifimac = wnet_vif->vm_wmac;
@@ -2915,6 +2976,26 @@ static int vm_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
         wifi_mac_end_scan(ss);
     }
 
+    /*Not apply to FT roaming*/
+    if (wnet_vif->vm_state == WIFINET_S_CONNECTED) {
+        AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_WARN,"vm_sate:%d unexpected\n",wnet_vif->vm_state);
+        wnet_vif->vm_des_nssid = 0;
+        memset(wnet_vif->vm_des_ssid, 0, IV_SSID_SCAN_AMOUNT*sizeof(struct wifi_mac_ScanSSID));
+        wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
+    }
+
+    while (wnet_vif->vm_mainsta->is_disconnecting || wnet_vif->vm_mainsta->connect_status == CONNECT_DISCONNECTING)
+    {
+        msleep(5);
+        delay_ms += 5;
+
+        if (delay_ms >= 1000) {
+            AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_ERROR,"disconnecting process is not done, delay_ms=%d\n", delay_ms);
+            ret = -EBUSY;
+            goto exit;
+        }
+    }
+
     if (pwdev_priv->connect_request) {
         AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_WARN, "multiple connect req, should not happen\n");
     }
@@ -2948,6 +3029,9 @@ static int vm_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
         AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "bssid=%s\n", ether_sprintf(lsme->bssid));
         WIFINET_ADDR_COPY(wnet_vif->vm_des_bssid, lsme->bssid);
         wnet_vif->vm_flags |= WIFINET_F_DESBSSID;
+        if (memcmp(lsme->bssid, wnet_vif->vm_connect_scan_entry.scaninfo.SI_bssid, WIFINET_ADDR_LEN)) {
+            wnet_vif->vm_connect_scan_entry.se_valid = 0;
+        }
     }
     if (lsme->privacy) {
         wnet_vif->vm_flags |= WIFINET_F_PRIVACY;
@@ -3139,19 +3223,23 @@ static int vm_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 
     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "connect_timeout=%d ms\n",CFG80211_CONNECT_TIMER_OUT);
 
+    WIFI_ALPHA_LOCK(wifimac);
+    wifimac->wm_alpha_set_forbid |= CONNECT_FORBIDDEN;
+    WIFI_ALPHA_UNLOCK(wifimac);
+
+    OS_SPIN_LOCK_IRQ(&pwdev_priv->connect_req_lock,pwdev_priv->connect_req_lock_flags);
+    wnet_vif->vm_mainsta->connect_status = CONNECT_CONNECTING;
+    pwdev_priv->connect_request = sme;
+    os_timer_ex_start(&pwdev_priv->connect_timeout);
+    wnet_vif->vm_connecting_retry_cnt = 0;
+    OS_SPIN_UNLOCK_IRQ(&pwdev_priv->connect_req_lock,pwdev_priv->connect_req_lock_flags);
+
     if (wnet_vif->vm_state == WIFINET_S_CONNECTED) {
         wifi_mac_top_sm(wnet_vif, WIFINET_S_ASSOC, 0);
 
     } else {
         wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
     }
-
-    OS_SPIN_LOCK_IRQ(&pwdev_priv->connect_req_lock,pwdev_priv->connect_req_lock_flags);
-    wnet_vif->vm_mainsta->connect_status = CONNECT_IDLE;
-    pwdev_priv->connect_request = sme;
-    os_timer_ex_start(&pwdev_priv->connect_timeout);
-    wnet_vif->vm_connecting_retry_cnt = 0;
-    OS_SPIN_UNLOCK_IRQ(&pwdev_priv->connect_req_lock,pwdev_priv->connect_req_lock_flags);
 
 exit:
     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_DEBUG, "\n");
@@ -3163,6 +3251,7 @@ vm_cfg80211_disconnect(struct wiphy *wiphy,
     struct net_device *dev, unsigned short reason_code)
 {
     struct wlan_net_vif *wnet_vif = wiphy_to_adapter(wiphy);
+    struct vm_wdev_priv *pwdev_priv = wdev_to_priv(wnet_vif->vm_wdev);
     int ret = 0;
     int mgmt_arg;
     int total_delay = 0;
@@ -3183,7 +3272,6 @@ vm_cfg80211_disconnect(struct wiphy *wiphy,
         wifi_mac_scan_forbidden(wnet_vif, FORBIDDEN_SCAN_FOR_DISCONNECTING_TIMEOUT, FORBIDDEN_SCAN_FOR_DISCONNECTING);
 
     } else if (wnet_vif->vm_p2p_support) {
-        struct vm_wdev_priv *pwdev_priv = wdev_to_priv(wnet_vif->vm_wdev);
         if (pwdev_priv->connect_request) {
             ret = -EBUSY;
             AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_ERROR,"rev disconnect cmd when connecting\n");
@@ -3201,6 +3289,7 @@ vm_cfg80211_disconnect(struct wiphy *wiphy,
 
             if ((wifimac->wm_recovery_flags & WIFINET_RECOVERY_F_RUNNING)
                 && (wnet_vif->vm_recovery_state == WIFINET_RECOVERY_VIF_UP))  {
+                    os_timer_ex_cancel(&pwdev_priv->connect_timeout, CANCEL_SLEEP);
                     vm_cfg80211_connect_timeout_timer(wnet_vif);
                     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_WARN,"recovery is in process !\n");
             }
@@ -3211,14 +3300,21 @@ vm_cfg80211_disconnect(struct wiphy *wiphy,
     switch (wnet_vif->vm_opmode)
     {
         case WIFINET_M_STA:
-            AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "sta mode\n");
-            mgmt_arg = WIFINET_REASON_AUTH_LEAVE;
-            wifi_mac_send_mgmt(wnet_vif->vm_mainsta, WIFINET_FC0_SUBTYPE_DEAUTH, (void *)&mgmt_arg);
-            if (wnet_vif->vm_p2p_support) {
-                wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
-            }
-            else {
-                os_timer_ex_start_period(&wnet_vif->vm_mgtsend, DEFAULT_DEAUTH_TOT);
+            wnet_vif->vm_mainsta->connect_status = CONNECT_DISCONNECTING;
+            AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "sta mode vm_state:%d\n", wnet_vif->vm_state);
+
+            if (wnet_vif->vm_state >= WIFINET_S_AUTH) {
+                mgmt_arg = WIFINET_REASON_AUTH_LEAVE;
+                wifi_mac_send_mgmt(wnet_vif->vm_mainsta, WIFINET_FC0_SUBTYPE_DEAUTH, (void *)&mgmt_arg);
+                if (wnet_vif->vm_p2p_support) {
+                    wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
+                }
+                else {
+                    os_timer_ex_start_period(&wnet_vif->vm_mgtsend, DEFAULT_DEAUTH_TOT);
+                }
+            } else {
+                os_timer_ex_cancel(&pwdev_priv->connect_timeout, CANCEL_SLEEP);
+                vm_cfg80211_connect_timeout_timer(wnet_vif);
             }
 
             while (total_delay < 1000 && ((wifimac->wm_runningmask & BIT(wnet_vif->wnet_vif_id))
@@ -4912,6 +5008,7 @@ int vm_cfg80211_send_mgmt(struct wlan_net_vif *wnet_vif, const unsigned char *bu
     memcpy(wh, (void*)buf, len);
     os_skb_put(skb, len);
 
+
     sta = wifi_mac_find_mgmt_tx_sta(wnet_vif, wh->i_addr1);
     if (sta == NULL)
     {
@@ -5351,10 +5448,15 @@ static int vm_cfg80211_mgmt_tx_sta(struct wiphy *wiphy, struct wireless_dev *wde
     unsigned short seq = 0;
     unsigned int status = 0;
     struct wifi_mac_pub_gas_act_frame *pub_gas_act = NULL;
+    struct wifi_mac_p2p_pub_act_frame *p2p_pub_act = NULL;
+    int delay = 0;
+    struct wifi_mac_p2p *p2p = wiphy_to_p2p(wiphy);
+    int total_delay = 0;
 
 
     wh = (const struct wifi_frame*)params->buf;
     pub_gas_act = (struct wifi_mac_pub_gas_act_frame *)(params->buf + sizeof(struct wifi_frame));
+    p2p_pub_act = (struct wifi_mac_p2p_pub_act_frame *)((unsigned char *)params->buf + sizeof(struct wifi_frame));
 
     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "<%s> addr2 %s dev_addr %s\n",
         ndev->name, ether_sprintf(wh->i_addr2), ether_sprintf(ndev->dev_addr));
@@ -5378,6 +5480,23 @@ static int vm_cfg80211_mgmt_tx_sta(struct wiphy *wiphy, struct wireless_dev *wde
 
         AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_INFO,"auth_alg=%d, seq:%04x, status:%d\n", auth_alg,
             seq, AML_GET_LE16((unsigned char *)wh + sizeof(struct wifi_frame) + 4));
+    }
+
+    if (params->len <= P2P_MAX_ACTION_LEN) {
+        p2p->cookie = *cookie;
+        p2p->action_pkt_len = params->len;
+        p2p->raw_action_pkt_len = params->len;
+        p2p->action_dialog_token = p2p_pub_act->dialog_token;
+        p2p->act_pkt_retry_count = 0;
+        p2p->tx_status_flag = WIFINET_TX_STATUS_NOSET;
+        p2p->send_tx_status_flag = 0;
+        memset(p2p->action_pkt, 0, P2P_MAX_ACTION_LEN);
+        memcpy(p2p->action_pkt, params->buf, params->len);
+        memset(p2p->raw_action_pkt, 0, P2P_MAX_ACTION_LEN);
+        memcpy(p2p->raw_action_pkt, params->buf, params->len);
+        if (wnet_vif->vm_flags_ext2 & WIFINET_FEXT2_DPP_CONNECTION_STATUS_RETRY) {
+            wnet_vif->vm_flags_ext2 &= ~WIFINET_FEXT2_DPP_CONNECTION_STATUS_RETRY;
+        }
     }
 
     os_timer_ex_cancel(&wnet_vif->vm_mgtsend, CANCEL_SLEEP);
@@ -5404,11 +5523,37 @@ static int vm_cfg80211_mgmt_tx_sta(struct wiphy *wiphy, struct wireless_dev *wde
             if (auth_channel == NULL) {
                 auth_channel = wifi_mac_find_chan(wifimac, target_channel, WIFINET_BWC_WIDTH20, target_channel);
             }
-            wifi_mac_ChangeChannel(wifimac, auth_channel, 0, wnet_vif->wnet_vif_id);
 
         } else {
             auth_channel = wifimac->wm_curchan;
         }
+    }
+
+    if (p2p_pub_act && (p2p_pub_act->category == AML_CATEGORY_PUBLIC) && (p2p_pub_act->action == WIFINET_ACT_PUBLIC_P2P)) {
+       if (p2p_pub_act->oui_type == OUI_TYPE_DPP) {
+           unsigned char dpp_action_subtype = *((char*)wh + sizeof(struct wifi_frame) + 7);
+           p2p->action_chan = auth_channel;
+           if (wifi_mac_is_wm_running(wifimac) == true && wnet_vif->vm_curchan && (params->len <= P2P_MAX_ACTION_LEN)) {
+               wifi_mac_scan_notify_leave_or_back(wnet_vif, 1);
+               while ((!wifimac->drv_priv->hal_priv->hal_ops.hal_tx_empty()) && total_delay < 500) {
+                  msleep(10);
+                  total_delay += 10;
+               }
+               AML_PRINT_LOG_INFO("wait pkt clear total_delay:%d ms  wifimac channel=%d\n",
+                            total_delay,wifimac->wm_curchan->chan_pri_num);
+           }
+           wnet_vif->vm_flags_ext2 |= WIFINET_FEXT2_DPP_SEND;
+           if (dpp_action_subtype < 19) {
+               AML_PRINT_LOG_INFO("DPP->%s flags:0x%x\n", dpp_pub_action_str[dpp_action_subtype], wnet_vif->vm_flags_ext2);
+           } else {
+               AML_PRINT_LOG_INFO("subtype:%d\n", dpp_action_subtype);
+           }
+       }
+    }
+
+    if (auth_channel != wifimac->wm_curchan) {
+        wnet_vif->vm_flags_ext2 |= WIFINET_FEXT2_MGMT_RESTORE_CHANNEL;
+        wifi_mac_ChangeChannel(wifimac, auth_channel, 0, wnet_vif->wnet_vif_id);
     }
 
     switch (pub_gas_act->action)
@@ -5427,9 +5572,22 @@ static int vm_cfg80211_mgmt_tx_sta(struct wiphy *wiphy, struct wireless_dev *wde
         goto exit;
     }
 
+    while ((wnet_vif->vm_flags_ext2 & WIFINET_FEXT2_DPP_SEND) && delay < 500) {
+        msleep(20);
+        delay += 20;
+    }
+
+    if (wnet_vif->vm_flags_ext2 & WIFINET_FEXT2_DPP_SEND) {
+        wnet_vif->vm_flags_ext2 &= ~WIFINET_FEXT2_DPP_SEND;
+    }
+
+    AML_PRINT_LOG_INFO("delay:%d ms tx_status:%d\n", delay, wnet_vif->vm_p2p->send_tx_status_flag);
+
 exit:
     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_DEBUG,"ack=%d\n",ack );
-    cfg80211_mgmt_tx_status(wnet_vif->vm_wdev, *cookie, params->buf, params->len, ack, GFP_KERNEL);
+    if (!wnet_vif->vm_p2p->send_tx_status_flag) {
+        cfg80211_mgmt_tx_status(wnet_vif->vm_wdev, *cookie, params->buf, params->len, ack, GFP_KERNEL);
+    }
     return ret;
 }
 
@@ -5442,7 +5600,6 @@ static int vm_cfg80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
     if ((wnet_vif->vm_opmode == WIFINET_M_STA) || (wnet_vif->vm_opmode == WIFINET_M_P2P_CLIENT) || (wnet_vif->vm_opmode == WIFINET_M_HOSTAP)) {
         if (wnet_vif->vm_p2p_support) {
             ret = vm_cfg80211_mgmt_tx_p2p(wiphy, wdev, params, cookie);
-
         } else {
             ret = vm_cfg80211_mgmt_tx_sta(wiphy, wdev, params, cookie);
         }

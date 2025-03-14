@@ -617,7 +617,7 @@ unsigned short hal_tx_desc_get_len(unsigned char rate ,unsigned short pktlen,
 unsigned short Hal_TxDescriptor_GetAckTimeout( unsigned char data_rate,unsigned char preambletype)
 {
     if (IS_HT_RATE(data_rate) || IS_VHT_RATE(data_rate)) {
-        return 380 + PHY_TEST;
+        return 80 + PHY_TEST;
     } else {
         return 20 + PHY_TEST;
     }

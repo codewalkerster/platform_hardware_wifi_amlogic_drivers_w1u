@@ -22,6 +22,9 @@ extern unsigned char regdom_scheme;
 #define IS_REGD_CUST() (IS_REGD_CUST_BYDB() || IS_REGD_CUST_BYDRV())
 #define IS_REGD_USE_DB() (IS_REGD_CORE_MGMT() || IS_REGD_CUST_BYDB())
 
+#define SCAN_FORBIDDEN         BIT(0)
+#define CONNECT_FORBIDDEN     BIT(1)
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0))
 #define IS_REGDOM_SELF_MANAGED(wiphy)	\
 	(wiphy->regulatory_flags & REGULATORY_WIPHY_SELF_MANAGED)

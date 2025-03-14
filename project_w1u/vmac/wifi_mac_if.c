@@ -410,32 +410,26 @@ wifi_mac_connect_end(struct wifi_mac *wifimac)
 void wifi_mac_scan_set_gain(struct wifi_mac *wifimac, unsigned char rssi)
 {
     // AML_PRINT_LOG_INFO("scan rssi:%d\n", 256 - rssi);
-    wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, rssi);
+    wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, rssi, 0);
 }
 
 void wifi_mac_set_channel_rssi(struct wifi_mac *wifimac, unsigned char rssi)
 {
     unsigned char rssi_set = rssi;
-
-    if (wifimac->bt_lk && rssi >= 213 && WIFINET_IS_CHAN_2GHZ(wifimac->drv_priv->drv_wnet_vif_table[0]->vm_curchan)) {
-        //for bt wifi coexit need set -50 gian
-        wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, rssi);
-        AML_PRINT_LOG_DEBUG("coexist_set_gain %d-> %d\n", wifimac->bt_lk, 256 - rssi_set);
+    //struct hw_interface* hif = hif_get_hw_interface();
+    if (wifimac->bt_lk && rssi >= 211 && WIFINET_IS_CHAN_2GHZ(wifimac->drv_priv->drv_wnet_vif_table[0]->vm_curchan)) {
+        //set 3,3
+        wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, 0xf8, 0);
+        AML_PRINT_LOG_INFO("coexist set_gain %d-> %d\n", wifimac->bt_lk, 256 - 0xf8);
 
     } else if (wifimac->is_connect_set_gain) {
-        if (rssi_set > 191) {
-            rssi_set = 191;
-        }
-        wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, rssi_set);
-        AML_PRINT_LOG_DEBUG("is_connect_set_gain %d-> %d\n", wifimac->is_connect_set_gain, 256 - rssi_set);
+        wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, rssi_set, 0);
+        AML_PRINT_LOG_INFO("is_connect_set_gain %d-> %d\n", wifimac->is_connect_set_gain, 256 - rssi_set);
 
     } else {
-        if (rssi >= 204) {
-            wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, 180); //-76 gain
-        }
-        else {
-            wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, 174); //-82 gain
-        }
+        //for high gain setting
+        wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, rssi_set, 1);
+        AML_PRINT_LOG_INFO("rvr_set_gain %d-> %d\n", wifimac->is_connect_set_gain, 256 - rssi_set);
     }
 
 }
@@ -904,6 +898,33 @@ bad:
     return NETDEV_TX_OK;
 }
 
+extern char dpp_pub_action_str[][50];
+unsigned char wifi_mac_is_dpp_frame(struct sk_buff *skb, struct wifi_station *sta)
+{
+    struct wifi_mac_p2p_pub_act_frame *p2p_pub_act = NULL;
+    unsigned char *buf = (unsigned char *)os_skb_data(skb);
+    bool is_dpp_frame = false;
+
+    p2p_pub_act = (struct wifi_mac_p2p_pub_act_frame *)(buf + sizeof(struct wifi_frame));
+
+    if (p2p_pub_act && (p2p_pub_act->category == AML_CATEGORY_PUBLIC) && (p2p_pub_act->action == WIFINET_ACT_PUBLIC_P2P)) {
+        if (p2p_pub_act->oui_type == OUI_TYPE_DPP) {
+            unsigned char dpp_action_subtype = *(buf + sizeof(struct wifi_frame) + 7);
+            if (dpp_action_subtype == 11) {
+                concurrent_channel_protection(sta->sta_wnet_vif, 2000);
+            }
+
+            if (dpp_action_subtype < 19) {
+                AML_PRINT_LOG_INFO("DPP->%s %d\n", dpp_pub_action_str[dpp_action_subtype], dpp_action_subtype);
+            } else {
+                AML_PRINT_LOG_INFO("subtype:%d\n", dpp_action_subtype);
+            }
+            is_dpp_frame = true;
+        }
+    }
+    return is_dpp_frame;
+}
+
 int wifi_mac_tx_mgmt_frm(struct wifi_mac *wifimac, struct sk_buff *skbbuf)
 {
     int error = 0;
@@ -925,6 +946,10 @@ int wifi_mac_tx_mgmt_frm(struct wifi_mac *wifimac, struct sk_buff *skbbuf)
     wifi_mac_pwrsave_txpre(skbbuf);
     wh = (struct wifi_frame *)os_skb_data(skbbuf);
     is_robust_mgmt = is_robust_management_frame(wh);
+
+    if (wifi_mac_is_dpp_frame(skbbuf, sta) == true) {
+        txinfo->b_dpp = 1;
+    }
 
     if ((sta->sta_flags_ext & WIFINET_NODE_MFP) && is_robust_mgmt && sta->pmf_key.wk_keylen) {
         if (WIFINET_IS_MULTICAST(wh->i_addr1)) {
@@ -1019,6 +1044,7 @@ wifi_mac_tx_status(void* nsta, struct wifi_mac_tx_status * ts)
         {
             sta->sta_last_txrate = ts->ts_ratekbps;
             wnet_vif->vm_mainsta->sta_last_txrate = ts->ts_ratekbps;
+            sta->last_txrate_bw = (ts->ts_flags & IEEE80211_TX_RC_80_MHZ_WIDTH) ? BW_80 : (ts->ts_flags & IEEE80211_TX_RC_40_MHZ_WIDTH) ? BW_40 : BW_20;
         }
     }
 }
@@ -1256,6 +1282,34 @@ void wifi_mac_roaming_check(  struct wifi_mac *wifimac, struct wifi_station *sta
     else {
         roaming_cnt = 0;
     }
+}
+
+int wifi_mac_cal_noise(int rssi,unsigned int snr)
+{
+    int noise = 0;
+    unsigned char noisefigure;
+
+    if (rssi <= -54 ) {
+        noisefigure = 5;
+    } else if (rssi <= -42) {
+        noisefigure = 8;
+    } else if (rssi <= -36) {
+        noisefigure = 14;
+    } else if (rssi <= -30) {
+        noisefigure = 19;
+    } else if (rssi <= -24) {
+        noisefigure = 25;
+    } else if (rssi <= -18) {
+        noisefigure = 30;
+    } else if (rssi <= -12) {
+        noisefigure = 36;
+    } else {
+        noisefigure = 44;
+    }
+
+    noise = rssi - snr - noisefigure;
+
+    return noise;
 }
 
 static int wifi_mac_average_rssi(int rssi,int i)
@@ -2071,8 +2125,11 @@ int wifi_mac_cap_attach(struct wifi_mac *wifimac, struct drv_private* drv_priv)
     os_timer_ex_initialize(&wifimac->wm_tp_rate, 1000, wifi_mac_monitor_tp_rate, wifimac);
     wifi_mac_set_fwlog_mode(get_fwlog_mode(), wifimac);
 
+    wifimac->wm_alpha_set_forbid = 0;
+    wifimac->wm_alpha_set_in_progress = 0;
     wifimac->wm_alpha_pending = 0;
     memset(wifimac->wm_alpha_target, 0x00, sizeof(wifimac->wm_alpha_target)/sizeof(wifimac->wm_alpha_target[0]));
+    spin_lock_init(&wifimac->alpha_lock);
 
     if (hal_ant_sel_en_get() == 2) {
         os_timer_ex_initialize(&wifimac->wm_ant_select, ANT_SEL_MEAS_PERIOD, wifi_mac_ant_select, wifimac);
@@ -2981,10 +3038,37 @@ static void wifi_mac_tx_act_timeout_ex (SYS_TYPE param1,
 {
     struct wlan_net_vif *wnet_vif = (struct wlan_net_vif *)param1;
     struct wifi_mac *wifimac = wnet_vif->vm_wmac;
+    struct wifi_mac_p2p *p2p = wnet_vif->vm_p2p;
     AML_PRINT_LOG_INFO("vid:%d, act_pkt_retry_count:%d, token:%d\n",
         wnet_vif->wnet_vif_id, wnet_vif->vm_p2p->act_pkt_retry_count, wnet_vif->vm_p2p->action_dialog_token);
 
     if (wnet_vif->vm_p2p->tx_status_flag == WIFINET_TX_STATUS_SUCC) {
+        return;
+    }
+
+    if ((wnet_vif->vm_flags_ext2 & WIFINET_FEXT2_DPP_CONNECTION_STATUS_RETRY)) {
+        if (wnet_vif->vm_p2p->act_pkt_retry_count < 10) {
+            int delay = 0;
+            if (p2p->action_chan && (wifimac->wm_curchan != p2p->action_chan)) {
+                if (wifi_mac_is_wm_running(wifimac) == true) {
+                    wifi_mac_scan_notify_leave_or_back(wnet_vif, 1);
+                    while ((!wifimac->drv_priv->hal_priv->hal_ops.hal_tx_empty()) && delay < 500) {
+                       msleep(10);
+                       delay += 10;
+                    }
+                    wnet_vif->vm_flags_ext2 |= WIFINET_FEXT2_MGMT_RESTORE_CHANNEL;
+                }
+                wifi_mac_ChangeChannel(wifimac, p2p->action_chan, 0, wnet_vif->wnet_vif_id);
+            }
+            wnet_vif->vm_p2p->act_pkt_retry_count++;
+            AML_PRINT_LOG_INFO("dpp status retry pri_chan:%d target chan:%d delay:%d flag:%x retry_cnt:%d\n", wifimac->wm_curchan->chan_pri_num,
+                p2p->action_chan->chan_pri_num, delay, wnet_vif->vm_flags_ext2, wnet_vif->vm_p2p->act_pkt_retry_count);
+            //need a lock
+            vm_cfg80211_send_mgmt(wnet_vif, wnet_vif->vm_p2p->action_pkt, wnet_vif->vm_p2p->action_pkt_len);
+        } else {
+            AML_PRINT_LOG_INFO("dpp connection send fail\n");
+            wnet_vif->vm_flags_ext2 &= ~WIFINET_FEXT2_DPP_CONNECTION_STATUS_RETRY;
+        }
         return;
     }
 
@@ -3062,6 +3146,7 @@ static void wifi_mac_tx_timeout_ex (SYS_TYPE param1,
 
     wnet_vif->mgmt_pkt_retry_count = 0;
     if ((wnet_vif->vm_state == WIFINET_S_AUTH) || (wnet_vif->vm_state == WIFINET_S_ASSOC)) {
+        wifi_mac_show_per_info();
         wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
     }
 }
@@ -3106,7 +3191,7 @@ static int wifi_mac_act_tx_timeout(void* arg)
     struct wifi_station *sta = NULL;
     struct wifi_station *sta_next = NULL;
 
-    if (wnet_vif->vm_p2p_support == 1) {
+    if (wnet_vif->vm_p2p_support == 1 || (wnet_vif->vm_flags_ext2 & WIFINET_FEXT2_DPP_CONNECTION_STATUS_RETRY)) {
         WIFINET_DPRINTF(AML_LOG_ID_ACTION, AML_LOG_LEVEL_INFO,"vm_state %s", wifi_mac_state_name[wnet_vif->vm_state]);
         wifi_mac_add_work_task(wnet_vif->vm_wmac,wifi_mac_tx_act_timeout_ex, NULL,(SYS_TYPE)arg,0,0,0, 0);
     }
@@ -3220,6 +3305,7 @@ wifi_mac_sub_sm(struct wlan_net_vif *wnet_vif, enum wifi_mac_state nstate, int a
     struct wifi_station *sta;
     enum wifi_mac_state prestate;
     int mgmt_arg;
+    int ret = 0;
 
     prestate = wnet_vif->vm_state;
     wnet_vif->vm_state = nstate;
@@ -3355,9 +3441,10 @@ wifi_mac_sub_sm(struct wlan_net_vif *wnet_vif, enum wifi_mac_state nstate, int a
                 case WIFINET_S_AUTH:
                 case WIFINET_S_ASSOC:
                     /* if (wifimac->wm_roaming == WIFINET_ROAMING_AUTO) */
-                    if (wnet_vif->vm_connecting_retry_cnt++ >= WIFINET_NODE_MAX_CONNECTING_CNT) {
+                    if ((wnet_vif->vm_connecting_retry_cnt++ >= WIFINET_NODE_MAX_CONNECTING_CNT)
+                        || (sta->connect_status == CONNECT_DISCONNECTING)) {
                         struct vm_wdev_priv *pwdev_priv = wdev_to_priv(wnet_vif->vm_wdev);
-                        AML_PRINT_LOG_INFO("not able connect target ap just disconnect\n");
+                        AML_PRINT_LOG_INFO("cancel connection and indicate disconenct\n");
                         os_timer_ex_cancel(&pwdev_priv->connect_timeout, CANCEL_SLEEP);
                         wifi_mac_notify_nsta_disconnect(sta, 0);
                         wnet_vif->vm_des_nssid = 0;
@@ -3424,6 +3511,10 @@ wifi_mac_sub_sm(struct wlan_net_vif *wnet_vif, enum wifi_mac_state nstate, int a
 
             if (prestate != nstate) {
                 wnet_vif->mgmt_pkt_retry_count = 0;
+            }
+            if (sta->connect_status >= CONNECT_DISCONNECTING) {
+                wifi_mac_add_work_task(wnet_vif->vm_wmac, wifi_mac_sm_switch, NULL, (SYS_TYPE)wnet_vif, WIFINET_S_SCAN, 0, 0, 0);
+                break;
             }
 
             switch (prestate) {
@@ -3501,6 +3592,11 @@ wifi_mac_sub_sm(struct wlan_net_vif *wnet_vif, enum wifi_mac_state nstate, int a
                 wnet_vif->mgmt_pkt_retry_count = 0;
             }
 
+            if (sta->connect_status >= CONNECT_DISCONNECTING) {
+                wifi_mac_add_work_task(wnet_vif->vm_wmac, wifi_mac_sm_switch, NULL, (SYS_TYPE)wnet_vif, WIFINET_S_SCAN, 0, 0, 0);
+                break;
+            }
+
             switch (prestate)
             {
                 case WIFINET_S_AUTH:
@@ -3547,7 +3643,7 @@ wifi_mac_sub_sm(struct wlan_net_vif *wnet_vif, enum wifi_mac_state nstate, int a
                     break;
             }
 
-            if (prestate != WIFINET_S_CONNECTED
+            if (prestate == WIFINET_S_ASSOC
                 && ((wnet_vif->vm_opmode == WIFINET_M_STA) && (wnet_vif->vm_flags_ext & WIFINET_FEXT_SWBMISS)))
             {
                 wifi_mac_add_work_task(wifimac,wifi_mac_set_beacon_miss, NULL, (SYS_TYPE)wifimac,
@@ -3600,7 +3696,7 @@ wifi_mac_sub_sm(struct wlan_net_vif *wnet_vif, enum wifi_mac_state nstate, int a
                     os_timer_ex_start(&wifimac->wm_ant_rssi_measure);
                     printk("wm_ant_rssi_measure, wifi_mac_get_cur_ant:%d\n", wifi_mac_get_cur_ant()+1);
                 }
-
+                wifi_mac_show_per_info();
                 g_auto_gain_base = 0;
                 wifimac->wm_disconnect_code = DISCONNECT_GENERIC;
                 sta->sta_is_adding_key = false;
@@ -3608,9 +3704,22 @@ wifi_mac_sub_sm(struct wlan_net_vif *wnet_vif, enum wifi_mac_state nstate, int a
                 if (wifimac->cca_thrd_cfg) {
                     wifi_mac_add_work_task(wifimac,cca_thrd_cfg_change_task,NULL,(SYS_TYPE)wnet_vif, ENABLE, 0, 0, 0);
                 }
+                wifi_mac_sta_auth(sta);
+            } else {
+                if ((wnet_vif->vm_opmode == WIFINET_M_STA) && (prestate != WIFINET_S_CONNECTED)) {
+                    AML_PRINT(AML_LOG_ID_CONNECT,AML_LOG_LEVEL_WARN, "vid[%d] unexpect switch to scan\n",wnet_vif->wnet_vif_id);
+                    wifi_mac_add_work_task(wnet_vif->vm_wmac, wifi_mac_sm_switch, NULL, (SYS_TYPE)wnet_vif, WIFINET_S_SCAN, 0, 0, 0);
+                    ret = -1;
+                }
             }
 
-            wifi_mac_sta_auth(sta);
+            WIFI_ALPHA_LOCK(wifimac);
+            if (wifimac->wm_alpha_set_forbid & CONNECT_FORBIDDEN) {
+                wifi_mac_run_delayed_country_switch(wifimac);
+                wifimac->wm_alpha_set_forbid &= ~CONNECT_FORBIDDEN;
+            }
+            WIFI_ALPHA_UNLOCK(wifimac);
+
             break;
         case WIFINET_S_MAX:
             AML_PRINT_LOG_INFO("-------------error: need to check twice-------------------\n");
@@ -3664,7 +3773,7 @@ wifi_mac_sub_sm(struct wlan_net_vif *wnet_vif, enum wifi_mac_state nstate, int a
     #endif
     }
 
-    return 0;
+    return ret;
 }
 
 int wifi_mac_top_sm(struct wlan_net_vif *wnet_vif,
@@ -3682,7 +3791,7 @@ int wifi_mac_top_sm(struct wlan_net_vif *wnet_vif,
 
     switch (nstate) {
         case WIFINET_S_SCAN:
-            wifi_mac_sub_sm(wnet_vif, nstate, arg);
+            rc = wifi_mac_sub_sm(wnet_vif, nstate, arg);
             break;
 
         case WIFINET_S_CONNECTED:
@@ -3704,14 +3813,14 @@ int wifi_mac_top_sm(struct wlan_net_vif *wnet_vif,
                 AML_PRINT_LOG_INFO("****************************************************\n");
 
             }
-            wifi_mac_sub_sm(wnet_vif, nstate, arg);
+            rc = wifi_mac_sub_sm(wnet_vif, nstate, arg);
 
             AML_PRINT_LOG_INFO("wm_running=%d, wnet_vif_mode %d vm_bandwidth:%d\n",
                 wifimac->wm_nrunning, wnet_vif->vm_mac_mode, wnet_vif->vm_bandwidth);
             break;
 
         case WIFINET_S_INIT:
-            wifi_mac_sub_sm(wnet_vif, nstate, arg);
+            rc = wifi_mac_sub_sm(wnet_vif, nstate, arg);
             if (opmode == WIFINET_M_HOSTAP) {
                 wifi_mac_add_work_task(wnet_vif->vm_wmac, wifi_mac_interface_down_ex, NULL, (SYS_TYPE)wnet_vif, 0, 0, 0, 0);
                 wifimac->drv_priv->drv_ops.down_interface(wifimac->drv_priv, wnet_vif->wnet_vif_id);
@@ -3724,11 +3833,11 @@ int wifi_mac_top_sm(struct wlan_net_vif *wnet_vif,
                 rc= -EINVAL;
                 goto __unlock;
             }
-            wifi_mac_sub_sm(wnet_vif, nstate, arg);
+            rc = wifi_mac_sub_sm(wnet_vif, nstate, arg);
             break;
 
         default:
-            wifi_mac_sub_sm(wnet_vif, nstate, arg);
+            rc = wifi_mac_sub_sm(wnet_vif, nstate, arg);
             break;
     }
 
@@ -3974,6 +4083,10 @@ int wifi_mac_setup(struct wifi_mac *wifimac,
     wnet_vif->mgmt_pkt_retry_count = 0;
     wnet_vif->txtp_stat.tcp_tx_payload_total = 0;
     wnet_vif->txtp_stat.vm_tx_speed = 0;
+    wnet_vif->txtp_stat.udp_tx_payload_total = 0;
+    wnet_vif->txtp_stat.vm_udp_tx_speed = 0;
+    wnet_vif->rxtp_stat.udp_rx_payload_total = 0;
+    wnet_vif->rxtp_stat.vm_udp_rx_speed = 0;
 
     wifi_mac_security_vattach(wnet_vif);
     wifi_mac_pmkid_vattach(wnet_vif);
@@ -4315,7 +4428,6 @@ void wifi_mac_run_delayed_country_switch(struct wifi_mac *wifimac)
         AML_PRINT_LOG_INFO("apply delayed country: %s\n", wifimac->wm_alpha_target);
         wifi_mac_set_country_regdom(wifimac->wm_alpha_target);
         wifimac->wm_alpha_pending = 0;
-        memset(wifimac->wm_alpha_target, 0x00, sizeof(wifimac->wm_alpha_target)/sizeof(wifimac->wm_alpha_target[0]));
     }
 }
 
@@ -4925,17 +5037,57 @@ int wifi_mac_tx_fail_statistics(struct wifi_mac *wifimac)
     return 0;
 }
 
+void wifi_mac_tp_test_report(struct wifi_mac *wifimac, unsigned short src, unsigned short dest)
+{
+/**5001 for iperf; 5201 for iperf3***/
+    if ((src >= 5000 && src <= 5201) || (dest >= 5000 && dest <= 5201)) {
+        wifimac->tp_pkt_flag = 1;
+    }
+}
+
 int wifi_mac_monitor_tp_rate(void *arg)
 {
     struct wifi_mac *wifimac = (struct wifi_mac *)arg;
     struct wlan_net_vif *wnet_vif = NULL;
+    static unsigned short last_in_throughput = 0;
+    static unsigned short count_n = 0;
+
+    if (wifimac->tp_pkt_flag) {
+        wifimac->in_throughput = BIT(4);
+        wifimac->tp_pkt_flag = 0;
+    } else {
+        wifimac->in_throughput >>= 1;
+    }
+
+    last_in_throughput = wifimac->in_throughput;
 
     wifi_mac_tx_fail_statistics(wifimac);
 
+    if ((count_n++ % 300) == 0 && (count_n != 0))
+    {
+        wifi_mac_show_per_info();
+    }
+
     list_for_each_entry(wnet_vif,&wifimac->wm_wnet_vifs, vm_next) {
+        /* tcp tx tp */
         wnet_vif->txtp_stat.vm_tx_speed = wnet_vif->txtp_stat.tcp_tx_payload_total >> 17;
         wnet_vif->txtp_stat.tcp_tx_payload_total = 0;
+        /* udp tx and rx tp */
+        wnet_vif->txtp_stat.vm_udp_tx_speed = wnet_vif->txtp_stat.udp_tx_payload_total >> 17;
+        wnet_vif->txtp_stat.udp_tx_payload_total = 0;
+        wnet_vif->rxtp_stat.vm_udp_rx_speed = wnet_vif->rxtp_stat.udp_rx_payload_total >> 17;
+        wnet_vif->rxtp_stat.udp_rx_payload_total = 0;
         break;
+    }
+
+    list_for_each_entry(wnet_vif,&wifimac->wm_wnet_vifs, vm_next) {
+        if (wifimac->in_throughput && wnet_vif->vm_scan_time_connect > WIFINET_SCAN_TIME_CONNECT_DEFAULT) {
+            wnet_vif->vm_scan_time_connect = WIFINET_SCAN_TIME_CONNECT_DEFAULT;
+            wifi_mac_set_scan_time(wnet_vif);
+        } else if (!wifimac->in_throughput && wnet_vif->vm_scan_time_connect < WIFINET_SCAN_TIME_CONNECT_MAX) {
+            wnet_vif->vm_scan_time_connect = WIFINET_SCAN_TIME_CONNECT_MAX;
+            wifi_mac_set_scan_time(wnet_vif);
+        }
     }
 
     return 0;
@@ -5291,6 +5443,8 @@ int wifi_mac_trigger_recovery(void *arg)
     }
 
     more_check = (IS_RECOVERY_CHECK_ONCE(wifimac->wm_recovery_src) ? 0 : more_check);
+
+    wifi_mac_show_per_info();
 
     /* maybe need recovery */
     if (more_check != 0) {
@@ -5649,5 +5803,44 @@ void wifi_mac_filter_special_data_frame(struct sk_buff *skb, SPECIAL_FRAME_STATU
 
         AML_PRINT(AML_LOG_ID_FILTER,AML_LOG_LEVEL_DEBUG, "%s\n", p_str);
     }
+}
+
+static void wifi_show_per_info(SYS_TYPE param1, SYS_TYPE param2,SYS_TYPE param3, SYS_TYPE param4,SYS_TYPE param5)
+{
+    struct hw_interface* hif = hif_get_hw_interface();
+    struct wifi_mac *wifimac = wifi_mac_get_mac_handle();
+    struct wlan_net_vif *wnet_vif = NULL;
+    int avg_snr;
+
+    AML_PRINT_LOG_INFO("ig0x%x,lpf0x%x,ct0x%x,at0x%x,fo0x%x,ag0x%x bs0x%x,0x%x,dpd0x%x,g0x%x,tf%d,to%d\n", hif->hif_ops.hi_read_word(0xa0816c), hif->hif_ops.hi_read_word(0xa081a4),
+        hif->hif_ops.hi_read_word(DF_AGC_REG_A29), hif->hif_ops.hi_read_word(DF_AGC_REG_A30),
+        hif->hif_ops.hi_read_word(0xf01024), hif->hif_ops.hi_read_word(DF_AGC_REG_A14),
+        hif->hif_ops.hi_read_word(0xf02040), hif->hif_ops.hi_read_word(0xf03040),
+        hif->hif_ops.hi_read_word(0xa0e4f0), hif->hif_ops.hi_read_word(0xa0e4b8),
+        hif->HiStatus.tx_fail_num,  hif->HiStatus.tx_ok_num);
+    if (wifimac->wm_curchan) {
+        AML_PRINT_LOG_INFO("pc%d bw%d\n", wifimac->wm_curchan->chan_pri_num, wifimac->wm_curchan->chan_bw);
+    }
+    list_for_each_entry(wnet_vif, &wifimac->wm_wnet_vifs, vm_next) {
+        if (wnet_vif->vm_curchan) {
+            AML_PRINT_LOG_INFO("pc%d bw%d\n", wnet_vif->vm_curchan->chan_pri_num, wnet_vif->vm_curchan->chan_bw);
+        }
+        if (wnet_vif->vm_mainsta) {
+            avg_snr = wnet_vif->vm_mainsta->sta_avg_snr;
+            AML_PRINT_LOG_INFO("br%d,dr%d,c%d,s%d,n%d,tr%d,bw%d,rr%d,bw%d\n", wnet_vif->vm_mainsta->sta_avg_bcn_rssi,wnet_vif->vm_mainsta->sta_avg_data_rssi, wnet_vif->vm_wmac->drv_priv->drv_config.cfg_txpoweplan,
+                avg_snr,wifi_mac_cal_noise(wnet_vif->vm_mainsta->sta_avg_bcn_rssi,avg_snr),
+                wnet_vif->vm_mainsta->sta_last_txrate / 1000,wnet_vif->vm_mainsta->last_txrate_bw,wnet_vif->vm_mainsta->sta_last_rxrate / 1000,wnet_vif->vm_mainsta->last_rxrate_bw);
+        }
+        AML_PRINT_LOG_INFO("[%d]re%d,rp%d,te%d,tp%d\n", wnet_vif->wnet_vif_id,wnet_vif->vm_devstats.rx_errors,wnet_vif->vm_devstats.rx_packets,
+            wnet_vif->vm_devstats.tx_errors,wnet_vif->vm_devstats.tx_packets);
+    }
+    phy_stc();
+    cca_busy_check();
+}
+
+void wifi_mac_show_per_info(void)
+{
+    struct wifi_mac *wifimac = wifi_mac_get_mac_handle();
+    wifi_mac_add_work_task(wifimac,wifi_show_per_info,NULL,0, 0, 0, 0, 0);
 }
 

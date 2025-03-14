@@ -20,9 +20,19 @@ spur_freq=24478
 #rf count<unsigned char>
 rf_count=2
 
+#scan report country ie <char>
+country_ie_report=0
+
 #tssi_ratio_limit =[on=1/off=0],[2g_ratio,],[5g_ratio]
-wftx_tssi_ratio_limit=0,100,133
-digital_code_gain_limit=0,0x38,0xf0,0x38,0xf0
+wftx_tssi_ratio_limit=1,100,133
+digital_code_gain_limit=1,0x0,0xff,0x0,0xff
+
+
+#config 2g channel bandwidth [0]:20/40Mhz [1]:20Mhz only
+channel_2g_20Mhz_only=0
+#scan abort when TP test
+scan_abort_enable=1
+scan_interval_thr=22
 
 #wifi 2g/5g tx power table
 wftx_pwrtbl_en=1

@@ -475,17 +475,17 @@ static void drv_set_channel_rssi_ex( SYS_TYPE param1,SYS_TYPE param2,SYS_TYPE pa
 {
     struct hal_private* hal_priv = hal_get_priv();
 
-    hal_priv->hal_ops.phy_set_channel_rssi(param1);
+    hal_priv->hal_ops.phy_set_channel_rssi(param1, param2);
 }
 
 
-static void drv_set_channel_rssi( struct drv_private *drv_priv, unsigned char rssi)
+static void drv_set_channel_rssi( struct drv_private *drv_priv, unsigned char rssi, unsigned char flag)
 {
     static unsigned char pre_rssi = 0;
 
     if (pre_rssi != rssi) {
         pre_rssi = rssi;
-        drv_hal_add_workitem((WorkHandler)drv_set_channel_rssi_ex, NULL, (SYS_TYPE)rssi, 0, 0, 0, 0);
+        drv_hal_add_workitem((WorkHandler)drv_set_channel_rssi_ex, NULL, (SYS_TYPE)rssi, (SYS_TYPE)flag, 0, 0, 0);
     }
 }
 
@@ -2087,7 +2087,7 @@ static void drv_intr_bcn_send_ok(void * dpriv,unsigned char vma_id)
     if ((wnet_vif->vm_opmode == WIFINET_M_HOSTAP)||
         (wnet_vif->vm_opmode == WIFINET_M_IBSS))
     {
-        drv_tx_get_mgmt_frm_rate(drv_priv, wnet_vif,
+        drv_tx_get_mgmt_frm_rate(drv_priv, wnet_vif->vm_mac_mode,
             WIFINET_FC0_TYPE_MGT | WIFINET_FC0_SUBTYPE_BEACON, &rate, &flag);
 
         WIFINET_BEACONBUF_LOCK(wifimac);

@@ -25,6 +25,9 @@ typedef struct TXTParameter
     unsigned char ant_gpio_cfg;
     unsigned char wifi_fwlog_by_file;
     unsigned char channel_2g_20Mhz_only;
+    unsigned char country_ie_report;
+    unsigned char scan_abort_enable;
+    unsigned char scan_interval_thr;
 } TXTParameter;
 extern TXTParameter aml_txt_parameter;
 
@@ -63,7 +66,7 @@ unsigned int phy_set_chan_support_type(struct hal_channel *chan);
 unsigned int phy_set_chan_phy_type(int);
 void phy_scan_cmd(unsigned int data);
 void phy_set_tx_power_accord_rssi(int bw, unsigned short channel, unsigned char rssi, unsigned char power_mode);
-void phy_set_channel_rssi(unsigned char rssi);
+void phy_set_channel_rssi(unsigned char rssi, unsigned char flag);
 unsigned int phy_set_rd_support(unsigned char wnet_vif_id, unsigned int data);
 unsigned int phy_pwr_save_mode(unsigned char wnet_vif_id,unsigned int data);
 unsigned int phy_vmac_disconnect(unsigned char wnet_vif_id);
@@ -116,6 +119,7 @@ int aml_send_me_shutdown(void);
 void phy_set_cf_end(unsigned char vid, unsigned char is_enable);
 unsigned char hal_ant_sel_en_get(void);
 unsigned char hal_get_channel_2g_20Mhz_only(void);
+TXTParameter *hal_get_txt_parameter(void);
 void phy_get_queue_debug_info(unsigned char vid);
 
 #endif  //__AML_PHY_H__

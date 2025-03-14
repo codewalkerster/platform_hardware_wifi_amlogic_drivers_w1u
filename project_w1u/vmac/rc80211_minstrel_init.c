@@ -610,12 +610,7 @@ int check_is_rate_fitable(struct wifi_station *sta, struct ieee80211_tx_info *in
 
     fitable_bw = get_fitable_bw(sta);
 
-    if (mi->sample_clear_flag) {
-        minstrel_clear_unfitable_prob_ewma(mi);
-        mi->sample_clear_flag = 0;
-    }
-
-    if ((!mi->sample_all_bw) && (bw < fitable_bw)) {
+    if (bw < fitable_bw) {
         AML_PRINT(AML_LOG_ID_RATE_CTR,AML_LOG_LEVEL_DEBUG, "bandwidth too low, no need to sample. bw:%d, fitable_bw:%d\n", bw, fitable_bw);
         return -1;
     }
@@ -637,7 +632,8 @@ int check_is_rate_fitable(struct wifi_station *sta, struct ieee80211_tx_info *in
         if(mi->need_clear_rate_index && mi->need_clear_rate_index < max_rate)
             max_rate = mi->need_clear_rate_index;
         mi->need_clear_rate_index = 0;
-        if (sta->sta_wnet_vif->txtp_stat.vm_tx_speed > 0) {
+        /*for complex environment XB7 tx performance*/
+        if (sta->sta_wnet_vif->txtp_stat.vm_tx_speed > 0 && sta->sta_avg_bcn_rssi < -60) {
             minstrel_clear_unfitable_rate_stats(mi, max_rate);
             AML_PRINT(AML_LOG_ID_RATE_CTR,AML_LOG_LEVEL_DEBUG, "snr or rssi not fit, rssi:%d, snr:%d, max_rate:%d, rate_index:%d\n",
                 sta->sta_avg_bcn_rssi, sta->sta_avg_snr, max_rate, rate_index);

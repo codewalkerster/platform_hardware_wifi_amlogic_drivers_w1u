@@ -505,6 +505,7 @@ enum {
     CHANNEL_NO_EVENT_FLAG = BIT(2),
     CHANNEL_RSSI_FLAG = BIT(3),
     CHANNEL_RSSI_PWR_FLAG = BIT(4),
+    CHANNEL_HIGH_GAIN_FLAG = BIT(5),
 };
 
 typedef struct Channel_Switch
@@ -847,13 +848,23 @@ typedef struct Set_Cf_End
 
 typedef struct Queue_Debug_Info
 {
-    unsigned int vid:2;
-    unsigned int wifi_inactive_flag:2;
     unsigned int queue_idx:4;
     unsigned int state:4;
-    unsigned int active_idx:4;
     unsigned int queue_cnt:8;
 } Queue_Debug_Info;
+
+typedef struct Common_Debug_Info
+{
+    unsigned int vid:2;
+    unsigned int active_idx:4;
+    unsigned int wifi_inactive_flag:1;
+    unsigned int tx_error_flag:2;
+    unsigned int flush_txframe_flag:2;
+    unsigned int ps_state:2;
+    unsigned int rsvd_0:3;
+    unsigned int baqueue_cnt:8;
+    unsigned int ba_cnt:8;
+} Common_Debug_Info;
 
 typedef struct Get_Queue_Debug_Info
 {
@@ -861,7 +872,9 @@ typedef struct Get_Queue_Debug_Info
     unsigned char reserve[2];
     unsigned char vid;
     Queue_Debug_Info param[QUEUE_AC_MAX];
+    Common_Debug_Info common_debug_info;
     unsigned int queue_debug;
+    unsigned int mac_irq_status;
 } Get_Queue_Debug_Info;
 
 typedef struct Get_Spec_Info

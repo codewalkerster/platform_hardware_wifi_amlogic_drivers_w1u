@@ -7,6 +7,7 @@
 #include "wifi_drv_capture.h"
 #include "wifi_csi.h"
 #include "wifi_common.h"
+#include "wifi_debug_key.h"
 
 
 extern void print_driver_version(void);
@@ -2106,18 +2107,18 @@ static void aml_iwpriv_enable_fw_log(struct wlan_net_vif *wnet_vif, unsigned int
 
     if(set > 0)
     {
-        set_reg(wnet_vif, 0x00f00004, 0x0ffbf0ff);
+        set_reg(wnet_vif, 0x00f00004, 0x0ffbfaff);
         msleep(100);
-        set_reg(wnet_vif, 0x00f00008, 0x00040f00);
+        set_reg(wnet_vif, 0x00f00008, 0x00040500);
         msleep(100);
         set_reg(wnet_vif, 0x00f00020, 0x00000001);
         wnet_vif->vm_wmac->drv_priv->hal_priv->hal_fw_log_flag = 1;
     }
     else
     {
-        set_reg(wnet_vif, 0x00f00004, 0x0ffff8ff);
+        set_reg(wnet_vif, 0x00f00004, 0x0ffffaff);
         msleep(100);
-        set_reg(wnet_vif, 0x00f00008, 0x00000700);
+        set_reg(wnet_vif, 0x00f00008, 0x00000500);
         msleep(100);
         set_reg(wnet_vif, 0x00f00020, 0x00000000);
         wnet_vif->vm_wmac->drv_priv->hal_priv->hal_fw_log_flag = 0;
@@ -2690,7 +2691,7 @@ static int aml_iwpriv_send_para1(struct net_device *dev,
             break;
 
         case AML_IWP_SET_CHL_RSSI:
-            wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, set);
+            wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, set, 0);
             break;
 
         case AML_IWP_SET_BURST:
@@ -2929,11 +2930,48 @@ static int aml_iwpriv_set_reg_legacy(struct net_device *dev,
     return 0;
 }
 
-extern void phy_read_key_table_info(unsigned char vid, unsigned char sta_id, unsigned char is_ukey);
-static void aml_iwpriv_get_key_entry(unsigned char vid, unsigned char sta_id, unsigned char is_ukey)
+static void aml_iwpriv_get_key_entry(int set1, int set2, int set3)
 {
-    AML_PRINT_LOG_INFO("vid:%d  sta_id:%d  is_key:%d\n", vid, sta_id, is_ukey);
-    phy_read_key_table_info(vid, sta_id, is_ukey);
+    struct wifi_mac* wifimac = wifi_mac_get_mac_handle();
+    struct wifi_station *sta = NULL;
+    struct wlan_net_vif *wnet_vif = NULL;
+    unsigned char vid = (unsigned char) ((set1&0xffff0000) >> 16);
+    unsigned char key_id = (unsigned char)set1&0xffff;
+    unsigned short sta_associd = set2;
+    unsigned char is_ukey = set3;
+
+
+    AML_PRINT_LOG_INFO("vid:%d  key_id:%d  is_ukey:%d associd:0x%x\n", vid, key_id, is_ukey, sta_associd);
+    wnet_vif = wifi_mac_get_wnet_vif_by_vid(wifimac, vid);
+    if (!wnet_vif) {
+        AML_PRINT_LOG_ERR("ERR wnet_vif\n");
+        return;
+    }
+
+    if (is_ukey) {
+        if (wnet_vif->vm_opmode == WIFINET_M_HOSTAP) {
+             //phy_read_key_table_info(vid, sta_id, is_ukey);
+             sta = wifi_mac_get_sta_by_staid(&wnet_vif->vm_sta_tbl, wnet_vif, sta_associd);
+
+             if (sta) {
+                 wifi_mac_key_ctrl_read_key_table_by_condition(vid, key_id, is_ukey, sta->sta_macaddr);
+             }
+             else {
+                 AML_PRINT_LOG_ERR("no such sta\n");
+             }
+         } else if (wnet_vif->vm_opmode == WIFINET_M_STA && wnet_vif->vm_state == WIFINET_S_CONNECTED) {
+
+             if (wnet_vif->vm_mainsta) {
+                 wifi_mac_key_ctrl_read_key_table_by_condition(vid, key_id, is_ukey, wnet_vif->vm_mainsta->sta_macaddr);
+             }
+             else {
+                 AML_PRINT_LOG_ERR("no such sta\n");
+             }
+         }
+    } else if (!is_ukey){
+        wifi_mac_key_ctrl_read_key_table_by_condition(vid, key_id, is_ukey, NULL);
+    }
+
 }
 
 int aml_iwpriv_efuse_config_temporary(unsigned int efuse_addr, unsigned int efuse_data, unsigned char enable)
@@ -3084,6 +3122,45 @@ int aml_iwpriv_get_reg(struct net_device *dev, char *str_addr, union iwreq_data 
     return 0;
 }
 
+int aml_iwpriv_get_performance_info(struct net_device *dev , union iwreq_data *wrqu, char *extra)
+{
+    //unsigned int addr = 0;
+    unsigned int reg_val1 = 0;
+    unsigned int reg_val2 = 0;
+    unsigned int len = 0;
+    struct wlan_net_vif *wnet_vif = NULL;
+    struct hw_interface* hif = hif_get_hw_interface();
+
+    wnet_vif = aml_iwpriv_get_vif(dev->name);
+    reg_val1 = get_reg(wnet_vif, 0xa0816c);
+    reg_val2 = get_reg(wnet_vif, 0xa081a4);
+    len += scnprintf(extra + len, IW_PRIV_SIZE_MASK, " ig0x%x,lpf0x%x\n",reg_val1,reg_val2);
+
+
+    reg_val1 = get_reg(wnet_vif, DF_AGC_REG_A29);
+    reg_val2 = get_reg(wnet_vif, DF_AGC_REG_A30);
+    len += scnprintf(extra + len, IW_PRIV_SIZE_MASK, " ct0x%x,ant0x%x\n",reg_val1,reg_val2);
+
+    reg_val1 = get_reg(wnet_vif, 0xf01024);
+    reg_val2 = get_reg(wnet_vif, DF_AGC_REG_A14);
+    len += scnprintf(extra + len, IW_PRIV_SIZE_MASK, " fo 0x%x,ag0x%x\n",reg_val1,reg_val2);
+
+    reg_val1 = get_reg(wnet_vif, 0xf02040);
+    reg_val2 = get_reg(wnet_vif, 0xf03040);
+    len += scnprintf(extra + len, IW_PRIV_SIZE_MASK, " bs0x%x,0x%x\n",reg_val1,reg_val2);
+
+    len += scnprintf(extra + len, IW_PRIV_SIZE_MASK, " tf%d,to%d\n",hif->HiStatus.tx_fail_num,  hif->HiStatus.tx_ok_num);
+
+    if (wnet_vif && wnet_vif->vm_mainsta && wnet_vif->vm_wmac->wm_curchan) {
+        len += scnprintf(extra + len, IW_PRIV_SIZE_MASK, " p_ch %d, bw%d\n",wnet_vif->vm_wmac->wm_curchan->chan_pri_num, wnet_vif->vm_wmac->wm_curchan->chan_bw);
+        len += scnprintf(extra + len, IW_PRIV_SIZE_MASK, " br %d,dr %d,co%d\n",wnet_vif->vm_mainsta->sta_avg_bcn_rssi,wnet_vif->vm_mainsta->sta_avg_data_rssi, wnet_vif->vm_wmac->drv_priv->drv_config.cfg_txpoweplan);
+    }
+
+    wrqu->data.length += len;
+    wrqu->data.length++;
+    wifi_mac_show_per_info();
+    return 0;
+}
 
 static int aml_iwpriv_get_efuse_times(struct net_device *dev, union iwreq_data *wrqu, char *extra)
 {
@@ -3529,6 +3606,9 @@ static int aml_iwpriv_get_char(struct net_device *dev,
         case AML_IWP_GET_BT_DIGITAL_GAIN_EFUSE:
             aml_iwpriv_get_bt_digital_gain_efuse(dev, wrqu, extra);
             break;
+        case AML_IWP_GET_WIFI_PERFORMANCE_INFO:
+            aml_iwpriv_get_performance_info(dev, wrqu, extra);
+            break;
         default:
             break;
     }
@@ -3964,11 +4044,233 @@ int iw_standard_set_pwr(struct net_device *dev, struct iw_request_info *info,
 
     return 0;
 }
+#define IFNAMSIZ 16
+
+int iw_standard_get_name(struct net_device *dev, struct iw_request_info *info,
+     union iwreq_data *wrqu, char *extra)
+{
+    struct wlan_net_vif *wnet_vif = netdev_priv(dev);
+    struct wifi_mac *wifimac = wnet_vif->vm_wmac;
+    enum nl80211_iftype iftype;
+
+    list_for_each_entry(wnet_vif, &wifimac->wm_wnet_vifs, vm_next) {
+        if (wnet_vif->vm_ndev == NULL || !(wnet_vif->vm_ndev->flags & IFF_RUNNING)) {
+            continue;
+        }
+        iftype = wnet_vif->vm_wdev->iftype;
+
+        if (iftype == NL80211_IFTYPE_STATION) {
+
+            if (wnet_vif->vm_mainsta && wnet_vif->vm_state == WIFINET_S_CONNECTED) {
+                switch (wnet_vif->vm_mainsta->sta_bssmode) {
+                    case WIFINET_MODE_11B:
+                        snprintf(wrqu->name, IFNAMSIZ, "IEEE 802.11b");
+                        break;
+                    case WIFINET_MODE_11G:
+                        if (wnet_vif->vm_curchan && wnet_vif->vm_curchan->chan_pri_num >= 36) {
+                            snprintf(wrqu->name, IFNAMSIZ, "IEEE 802.11a");
+                        }
+                        else {
+                            snprintf(wrqu->name, IFNAMSIZ, "IEEE 802.11g");
+                        }
+                        break;
+                    case WIFINET_MODE_11BG:
+                        snprintf(wrqu->name, IFNAMSIZ, "IEEE 802.11bg");
+                        break;
+                    case WIFINET_MODE_11GN:
+                        snprintf(wrqu->name, IFNAMSIZ, "IEEE 802.11gn");
+                        break;
+                    case WIFINET_MODE_11BGN:
+                        snprintf(wrqu->name, IFNAMSIZ, "IEEE 802.11bgn");
+                        break;
+                    case WIFINET_MODE_11N:
+                        snprintf(wrqu->name, IFNAMSIZ, "IEEE 802.11n");
+                        break;
+                    case WIFINET_MODE_11AC:
+                    case WIFINET_MODE_11NAC:
+                    case WIFINET_MODE_11GNAC:
+                        snprintf(wrqu->name, IFNAMSIZ, "IEEE 802.11ac");
+                        break;
+                    default:
+                        //snprintf(wrqu->name, IFNAMSIZ, "IEEE 802.11ax");
+                        AML_PRINT_LOG_WRAN("no such mode %d\n", wnet_vif->vm_mainsta->sta_bssmode);
+                        break;
+                }
+            } else {
+                snprintf(wrqu->name, IFNAMSIZ, "unassociated");
+            }
+        }
+    }
+    return 0;
+}
+
+int iw_standard_get_range(struct net_device *dev, struct iw_request_info *info,
+    union iwreq_data *wrqu, char *extra)
+{
+    struct iw_range * range = (struct iw_range *)extra;
+    struct wlan_net_vif *wnet_vif = netdev_priv(dev);
+    struct wifi_mac *wifimac = wnet_vif->vm_wmac;
+    enum nl80211_iftype iftype;
+    unsigned int throughput = 20000000;
+
+    list_for_each_entry(wnet_vif, &wifimac->wm_wnet_vifs, vm_next) {
+        if (wnet_vif->vm_ndev == NULL || !(wnet_vif->vm_ndev->flags & IFF_RUNNING)) {
+            continue;
+        }
+        iftype = wnet_vif->vm_wdev->iftype;
+
+        if (iftype == NL80211_IFTYPE_STATION) {
+
+            if (wnet_vif->vm_mainsta && wnet_vif->vm_state == WIFINET_S_CONNECTED && wnet_vif->vm_curchan) {
+                switch (wnet_vif->vm_curchan->chan_bw) {
+                    case CHAN_BW_20M:
+                        throughput = 40000000;
+                        break;
+                    case CHAN_BW_40M:
+                        throughput = 80000000;
+                        break;
+                    case CHAN_BW_80M:
+                        throughput = 160000000;
+                        break;
+                    default:
+                        AML_PRINT_LOG_ERR("no such bw:%d\n", wnet_vif->vm_curchan->chan_bw);
+                        break;
+                }
+            } else {
+                AML_PRINT_LOG_ERR("sta not connected\n");
+            }
+        }
+    }
+
+    memset(range, 0 , sizeof(*range));
+    range->throughput = throughput;
+    range->min_nwid = 0;
+    range->max_nwid = 0;
+    range->we_version_compiled  = WIRELESS_EXT;
+    range->we_version_source = WIRELESS_EXT;
+
+    return 0;
+}
+
+
+int iw_standard_get_ap(struct net_device *dev, struct iw_request_info *info,
+    union iwreq_data *wrqu, char *extra)
+{
+    struct wlan_net_vif *wnet_vif = netdev_priv(dev);
+    struct wifi_mac *wifimac = wnet_vif->vm_wmac;
+    enum nl80211_iftype iftype;
+    struct sockaddr * addr = &(wrqu->ap_addr);
+
+    list_for_each_entry(wnet_vif, &wifimac->wm_wnet_vifs, vm_next) {
+         if (wnet_vif->vm_ndev == NULL || !(wnet_vif->vm_ndev->flags & IFF_RUNNING)) {
+             continue;
+         }
+         iftype = wnet_vif->vm_wdev->iftype;
+
+         if (iftype == NL80211_IFTYPE_STATION) {
+            if (wnet_vif->vm_mainsta && wnet_vif->vm_state == WIFINET_S_CONNECTED) {
+                memcpy(addr->sa_data, wnet_vif->vm_mainsta->sta_bssid, ETH_ALEN);
+            }
+         }
+    }
+
+    return 0;
+}
+
+int iw_standard_get_essid(struct net_device *dev, struct iw_request_info *info,
+    union iwreq_data *wrqu, char *extra)
+{
+    struct iw_point * essid = &(wrqu->essid);
+    struct wlan_net_vif *wnet_vif = netdev_priv(dev);
+    struct wifi_mac *wifimac = wnet_vif->vm_wmac;
+    enum nl80211_iftype iftype;
+
+    list_for_each_entry(wnet_vif, &wifimac->wm_wnet_vifs, vm_next) {
+         if (wnet_vif->vm_ndev == NULL || !(wnet_vif->vm_ndev->flags & IFF_RUNNING)) {
+             continue;
+         }
+         iftype = wnet_vif->vm_wdev->iftype;
+
+         if (iftype == NL80211_IFTYPE_STATION) {
+            if (wnet_vif->vm_mainsta && wnet_vif->vm_state == WIFINET_S_CONNECTED) {
+                essid->length = wnet_vif->vm_mainsta->sta_esslen;
+                memcpy(extra, wnet_vif->vm_mainsta->sta_essid, wnet_vif->vm_mainsta->sta_esslen);
+                essid->flags = 1;
+            }
+         }
+    }
+    return 0;
+}
+
+static struct iw_statistics *aml_get_wireless_stats(struct net_device *dev)
+{
+    struct wlan_net_vif *wnet_vif = netdev_priv(dev);
+    struct wifi_mac *wifimac = wnet_vif->vm_wmac;
+    struct iw_statistics *wstats = &wnet_vif->vm_iwstats;
+    enum nl80211_iftype iftype;
+
+    list_for_each_entry(wnet_vif, &wifimac->wm_wnet_vifs, vm_next) {
+        if (wnet_vif->vm_ndev == NULL || !(wnet_vif->vm_ndev->flags & IFF_RUNNING)) {
+             continue;
+        }
+        iftype = wnet_vif->vm_wdev->iftype;
+
+        if (iftype == NL80211_IFTYPE_STATION) {
+            if (wnet_vif->vm_mainsta && wnet_vif->vm_state == WIFINET_S_CONNECTED) {
+                wstats->qual.qual = wnet_vif->vm_mainsta->sta_avg_snr;
+                wstats->qual.level = wnet_vif->vm_mainsta->sta_avg_bcn_rssi;
+                wstats->qual.noise = wifi_mac_cal_noise(wnet_vif->vm_mainsta->sta_avg_bcn_rssi,wnet_vif->vm_mainsta->sta_avg_snr);
+                wstats->qual.updated = IW_QUAL_ALL_UPDATED | IW_QUAL_DBM;
+            }
+            else
+            {
+                wstats->qual.qual = 0;
+                wstats->qual.level = 0;
+                wstats->qual.noise = 0;
+                wstats->qual.updated = IW_QUAL_ALL_UPDATED | IW_QUAL_DBM;
+            }
+        }
+    }
+
+    return wstats;
+}
+
+int iw_standard_get_freq(struct net_device *dev, struct iw_request_info *info,
+    union iwreq_data *wrqu, char *extra)
+{
+    struct iw_freq * pr_iw_freq = &(wrqu->freq);
+    struct wlan_net_vif *wnet_vif = netdev_priv(dev);
+    struct wifi_mac *wifimac = wnet_vif->vm_wmac;
+    enum nl80211_iftype iftype;
+
+
+    list_for_each_entry(wnet_vif, &wifimac->wm_wnet_vifs, vm_next) {
+        if (wnet_vif->vm_ndev == NULL || !(wnet_vif->vm_ndev->flags & IFF_RUNNING)) {
+            continue;
+        }
+        iftype = wnet_vif->vm_wdev->iftype;
+
+        if (iftype == NL80211_IFTYPE_STATION) {
+
+            if (wnet_vif->vm_mainsta && wnet_vif->vm_state == WIFINET_S_CONNECTED) {
+                pr_iw_freq->m = wnet_vif->vm_curchan->chan_cfreq1;
+                pr_iw_freq->e = 6;
+            }
+        }
+    }
+     return 0;
+}
 
 static const iw_handler standard_handler[] = {
     IW_HANDLER(SIOCGIWSTATS,    (iw_handler)iw_standard_get_stats),
     IW_HANDLER(SIOCSIWFREQ,     (iw_handler)iw_standard_sap_set_freq),
     IW_HANDLER(SIOCSIWPOWER,    (iw_handler)iw_standard_set_pwr),
+    IW_HANDLER(SIOCGIWNAME,    (iw_handler)iw_standard_get_name),
+    IW_HANDLER(SIOCGIWRANGE,   (iw_handler)iw_standard_get_range),
+    IW_HANDLER(SIOCGIWAP,      (iw_handler)iw_standard_get_ap),
+    IW_HANDLER(SIOCGIWESSID,   (iw_handler)iw_standard_get_essid),
+    IW_HANDLER(SIOCGIWFREQ,    (iw_handler)iw_standard_get_freq),
+
 };
 
 
@@ -4328,6 +4630,10 @@ static const struct iw_priv_args aml_iwpriv_private_args[] = {
     AML_IWP_GET_BT_DIGITAL_GAIN_EFUSE,
     IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_MASK, IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_MASK, "get_bt_dg"},
 {
+    AML_IWP_GET_WIFI_PERFORMANCE_INFO,
+    IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_MASK, IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_MASK, "get_per_info"},
+
+{
     SIOCIWFIRSTPRIV + 8,
     IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_FIXED | 3, 0, "set_amsdu"},
 {
@@ -4426,6 +4732,7 @@ struct iw_handler_def w1_iw_handle = {
     .standard = (iw_handler *)standard_handler,
     .private = aml_iwpriv_private_handler,
     .private_args = aml_iwpriv_private_args,
+    .get_wireless_stats = aml_get_wireless_stats,
 #endif
 };
 #endif

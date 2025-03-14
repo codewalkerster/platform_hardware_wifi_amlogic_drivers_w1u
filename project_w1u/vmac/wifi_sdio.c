@@ -1709,7 +1709,7 @@ int aml_sdio_pm_suspend(struct device *device)
     int ret = 0, cnt = 0;
 
     func = dev_to_sdio_func(device);
-
+    printk("%s %d\n", __func__, func->num);
     while (atomic_read(&hal_priv->drv_suspend_cnt) == 0)
     {
         msleep(50);
@@ -2186,6 +2186,8 @@ _restartsdio:
 }
 
 
+
+
 #ifdef HAL_SIM_VER
 #ifdef FW_NAME
 }
@@ -2193,5 +2195,3 @@ _restartsdio:
 #endif
 
 #endif /*end HAL_FPGA_VER */
-
-

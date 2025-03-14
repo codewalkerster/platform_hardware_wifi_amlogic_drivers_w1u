@@ -720,6 +720,7 @@ void wifi_mac_buffer_txq_flush(struct sk_buff_head *pstxqueue)
 {
     struct sk_buff *skb = NULL;
     unsigned int qlen_real = WIFINET_SAVEQ_QLEN(pstxqueue);
+    unsigned int detect_cnt = 0;
 
     if (qlen_real) {
         AML_PRINT_LOG_INFO("qlen_real:%d\n", qlen_real);
@@ -734,6 +735,13 @@ void wifi_mac_buffer_txq_flush(struct sk_buff_head *pstxqueue)
         if (skb)
         {
             wifi_mac_free_skb(skb);
+        } else {
+            AML_PRINT_LOG_ERR("null skb qlen_real:%d\n", qlen_real);
+            break;
+        }
+
+        if (detect_cnt++ == 1000) {
+            AML_PRINT_LOG_ERR("ASSERT qlen_real:%d\n", qlen_real);
         }
     }
 

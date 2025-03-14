@@ -465,11 +465,23 @@ unsigned char hal_wake_fw_req(void)
         return 1;
     }
 
-    if (atomic_read(&halpriv->drv_suspend_cnt) != 0)
+    if (aml_bus_type == 0)
     {
-        POWER_END_LOCK();
-        AML_PRINT_LOG_INFO("suspending, does not wake, hal_fw_ps_status:0x%x\n", halpriv->hal_fw_ps_status);
-        return 0;
+        if (atomic_read(&halpriv->sdio_suspend_cnt) != 0)
+        {
+            POWER_END_LOCK();
+            AML_PRINT_LOG_INFO("sdio is suspend, does not wake, hal_fw_ps_status:0x%x\n", halpriv->hal_fw_ps_status);
+            return 0;
+        }
+    }
+    else
+    {
+        if (atomic_read(&halpriv->drv_suspend_cnt) != 0)
+        {
+            POWER_END_LOCK();
+            AML_PRINT_LOG_INFO("suspending, does not wake, hal_fw_ps_status:0x%x\n", halpriv->hal_fw_ps_status);
+            return 0;
+        }
     }
 
     // check fw power save status
@@ -2848,6 +2860,7 @@ int hal_txok_thread(void *param)
     unsigned long callback = 0;
     struct sched_param sch_param;
     unsigned char queue_id = 0;
+    unsigned int timeout = 0;
 
     hif = hif_get_hw_interface();
     sch_param.sched_priority = 91;
@@ -2886,6 +2899,20 @@ int hal_txok_thread(void *param)
 
         while ((txok_status_node = tx_status_node_dequeue(txok_status_list)) != NULL)
         {
+            timeout = 0;
+
+            while (hal_priv->bhaltxdrop)
+            {
+                msleep(10);
+                timeout+=10;
+
+                if ( timeout > 500)
+                {
+                    AML_PRINT_LOG_ERR("wait tx drop timeout\n");
+                    break;
+                }
+            }
+
             tx_null_status = &(txok_status_node->tx_status.tx_null_status);
             if (((tx_null_status->txstatus == TX_DESCRIPTOR_STATUS_NULL_DATA_OK)
                 || (tx_null_status->txstatus == TX_DESCRIPTOR_STATUS_NULL_DATA_FAIL))
@@ -2951,11 +2978,18 @@ int hal_rx_thread(void *param)
     sch_param.sched_priority = 91;
     sched_setscheduler(current, SCHED_FIFO, &sch_param);
     AML_PRINT_LOG_INFO(" =====creat thread hal_rx_thread<=====\n");
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 153))
+    if (num_online_cpus() >= 2)
+    {
+        set_cpus_allowed_ptr(current, cpumask_of(1));
+    }
+#else
     if (aml_bus_type == AML_BUS_TYPE_USB)
     {
         set_cpus_allowed_ptr(current, cpumask_of(1));
     }
-
+#endif
     WAKE_LOCK_INIT(hal_priv,WAKE_LOCK_RX,"rx_proc amlwifi");
     while (!hal_priv->rx_thread_quit)
     {
@@ -3076,10 +3110,17 @@ int hi_irq_thread(void *param)
     sch_param.sched_priority = 93;
     sched_setscheduler(current, SCHED_FIFO, &sch_param);
     hal_priv->hi_task_stop = 0;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 153))
+    if (num_online_cpus() >= 2)
+    {
+        set_cpus_allowed_ptr(current, cpumask_of(0));
+    }
+#else
     if (aml_bus_type == AML_BUS_TYPE_USB)
     {
         set_cpus_allowed_ptr(current, cpumask_of(0));
     }
+#endif
     WAKE_LOCK_INIT(hal_priv,WAKE_LOCK_HI_IRQ_THREAD,"hi_irq_thread");
     while (!hal_priv->hi_irq_thread_quit)
     {

@@ -18,6 +18,7 @@
 #include "wifi_mac_sae.h"
 #include "wifi_cmd_func.h"
 #include "wifi_mac_tx_reg.h"
+#include <net/icmp.h>
 
 #define REKEY_EAPOL_1 0x1382
 
@@ -946,6 +947,7 @@ void wifi_mac_recv_pkt_parse(struct wifi_station *sta, struct sk_buff *skb) {
     struct iphdr *iphdrp = (struct iphdr *)((unsigned char *)eh + sizeof(struct ether_header));
     struct tcphdr *th = (struct tcphdr *)((unsigned char *)iphdrp + (iphdrp->ihl << 2));
     struct udphdr *uh = (struct udphdr *)((unsigned char *)iphdrp + (iphdrp->ihl << 2));
+    struct icmphdr *icmp_header = (struct udphdr *)((unsigned char *)iphdrp + (iphdrp->ihl << 2));
     unsigned char *p_eap = NULL;
     unsigned char i = 0;
     unsigned char *dhcp_p;
@@ -985,9 +987,10 @@ void wifi_mac_recv_pkt_parse(struct wifi_station *sta, struct sk_buff *skb) {
 #ifdef DRV_TCP_RETRANSMISSION
             wifi_mac_tcp_pkt_retransmit(sta, th);
 #endif
-
+            wifi_mac_tp_test_report(sta->sta_wmac, __constant_htons(th->source), __constant_htons(th->dest));
         } else if (iphdrp->protocol == IPPROTO_UDP) {
-         if (((uh->source == 0x4400) && (uh->dest == 0x4300))
+        sta->sta_wnet_vif->rxtp_stat.udp_rx_payload_total += __cpu_to_be16(uh->len) - sizeof(struct udphdr);
+        if (((uh->source == 0x4400) && (uh->dest == 0x4300))
                 || ((uh->source == 0x4300) && (uh->dest == 0x4400))) {
                 //AML_PRINT_LOG_INFO("source:%04x, dest:%04x\n", uh->source, uh->dest);
                 if (sta->connect_status == CONNECT_DHCP_GET_ACK  && sta->sta_wnet_vif->vm_use_static_ip == 0) {
@@ -1024,6 +1027,9 @@ void wifi_mac_recv_pkt_parse(struct wifi_station *sta, struct sk_buff *skb) {
                     }
                 }
             }
+            wifi_mac_tp_test_report(sta->sta_wmac, __constant_htons(uh->source), __constant_htons(uh->dest));
+        }else if (iphdrp->protocol == IPPROTO_ICMP) {
+            AML_PRINT(AML_LOG_ID_FILTER,AML_LOG_LEVEL_DEBUG, "icmp pkt type:%d\n", icmp_header->type);
         }
     }
 }
@@ -3857,7 +3863,6 @@ void wifi_mac_recv_probe_req(struct wlan_net_vif *wnet_vif,
             vm_cfg80211_notify_mgmt_rx(wnet_vif, channel, os_skb_data(skb),os_skb_get_pktlen(skb));
         }
         wifi_mac_send_mgmt(sta, WIFINET_FC0_SUBTYPE_PROBE_RESP, (void *)wh->i_addr2);
-
         if (wps != NULL)
         {
             AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_DEBUG, " length=%d get wps -ie in probe req",wps[1]);
@@ -3953,6 +3958,13 @@ static void wifi_mac_recv_auth(struct wlan_net_vif *wnet_vif,
         }
         wifi_softap_allsta_stopping(wnet_vif,1);
         wifi_mac_notify_nsta_disconnect(sta,0);
+        return;
+    }
+
+    if ((wnet_vif->vm_opmode == WIFINET_M_STA) && (sta->connect_status >= CONNECT_DISCONNECTING)) {
+        AML_PRINT(AML_LOG_ID_CONNECT, AML_LOG_LEVEL_WARN,"ignor auth frm as connect_status = %d\n", sta->connect_status);
+        os_timer_ex_cancel(&wnet_vif->vm_mgtsend, CANCEL_NO_SLEEP);
+        wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
         return;
     }
 
@@ -4504,11 +4516,17 @@ void wifi_mac_recv_assoc_rsp(struct wlan_net_vif *wnet_vif,
     unsigned char qosinfo;
     struct drv_private *drv_priv = drv_get_drv_priv();
 
-
     wh = (struct wifi_frame *) os_skb_data(skb);
 
     if ((wnet_vif->vm_opmode != WIFINET_M_STA) || (wnet_vif->vm_state != WIFINET_S_ASSOC)) {
         wnet_vif->vif_sts.sts_mng_discard++;
+        return;
+    }
+
+    if (sta->connect_status >= CONNECT_DISCONNECTING) {
+        AML_PRINT(AML_LOG_ID_CONNECT, AML_LOG_LEVEL_WARN,"ignor assoc rsp frm as connect_status = %d\n", sta->connect_status);
+        os_timer_ex_cancel(&wnet_vif->vm_mgtsend, CANCEL_NO_SLEEP);
+        wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
         return;
     }
 
@@ -4605,8 +4623,10 @@ void wifi_mac_recv_assoc_rsp(struct wlan_net_vif *wnet_vif,
         drv_priv->drv_ops.drv_set_tx_livetime(WIFINET_TX_LIVE_TIME);
         drv_priv->drv_ops.drv_set_bssid(drv_priv, sta->wnet_vif_id, sta->sta_bssid);
         drv_priv->drv_ops.RegisterStationID(drv_priv, sta->wnet_vif_id, sta->sta_associd, sta->sta_bssid, sta->sta_encrypt_flag);
-        wifi_mac_top_sm(wnet_vif, WIFINET_S_CONNECTED, WIFINET_FC0_SUBTYPE_ASSOC_RESP);
-
+        if (wifi_mac_top_sm(wnet_vif, WIFINET_S_CONNECTED, WIFINET_FC0_SUBTYPE_ASSOC_RESP) != 0) {
+            AML_PRINT_LOG_INFO("unexpect situation, stop connect\n");
+            return;
+        }
     } else {
         return;
     }
@@ -4661,7 +4681,7 @@ void wifi_mac_recv_deauth(struct wlan_net_vif *wnet_vif,
                 if (wnet_vif->vm_state != WIFINET_S_INIT) {
                     wnet_vif->vm_chan_roaming_scan_flag = 0;
                     wifi_mac_scan_access(wnet_vif);
-
+                    sta->connect_status = CONNECT_DISCONNECTING;
                     wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
                 }
                 wnet_vif->vm_wmac->wm_disconnect_code = DISCONNECT_RCVDEAUTH;
@@ -4726,6 +4746,7 @@ void wifi_mac_recv_disassoc(struct wlan_net_vif *wnet_vif,
         {
             case WIFINET_M_STA:
                 if (wnet_vif->vm_state == WIFINET_S_CONNECTED) {
+                    sta->connect_status = CONNECT_DISCONNECTING;
                     wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
 
                 } else {

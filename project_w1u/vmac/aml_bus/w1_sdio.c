@@ -15,6 +15,10 @@ struct amlw1_hwif_sdio g_w1_hwif_sdio;
 struct amlw1_hif_ops g_w1_hif_ops;
 struct aml_hif_sdio_ops g_hif_sdio_ops;
 
+typedef void (*bt_pm_func)(void);
+bt_pm_func g_bt_suspend_func;
+bt_pm_func g_bt_resume_func;
+
 unsigned char recovery_notify_bt = 0;
 unsigned char recovery_done = 1;
 unsigned char g_sdio_wifi_bt_alive;
@@ -906,20 +910,49 @@ static void  aml_sdio_remove(struct sdio_func *func)
     host_resume_req = NULL;
 }
 
+atomic_t g_suspend_func_cnt;
+unsigned char g_sdio_in_suspend = 0;
+
 static int aml_sdio_pm_suspend(struct device *device)
 {
+    int ret = 0;
+
+    if (cmpxchg(&g_sdio_in_suspend, 0, 1) == 0) {
+        atomic_set(&g_suspend_func_cnt, 0);
+        if (g_bt_suspend_func != NULL) {
+            g_bt_suspend_func();
+        }
+    }
+
+    atomic_inc(&g_suspend_func_cnt);
+
     if (host_suspend_req != NULL)
-        return host_suspend_req(device);
+        ret = host_suspend_req(device);
     else
-        return aml_w1_sdio_suspend(1);
+        ret = aml_w1_sdio_suspend(1);
+
+    return ret;
 }
 
 static int aml_sdio_pm_resume(struct device *device)
 {
-    if (host_resume_req != NULL)
-        return host_resume_req(device);
-    else
+    int ret = 0;
+
+    if (atomic_read(&g_suspend_func_cnt) == 0) {
         return 0;
+    }
+
+    if (host_resume_req != NULL)
+        ret = host_resume_req(device);
+
+    if (atomic_dec_and_test(&g_suspend_func_cnt) == 1) {//--g_suspend_func_cnt == 0
+        if (g_bt_resume_func != NULL) {
+            g_bt_resume_func();
+        }
+        cmpxchg(&g_sdio_in_suspend, 1, 0);
+    }
+
+    return ret;
 }
 void write_byte_8ba(unsigned char Bus, unsigned char SlaveAddr,
     unsigned char RegAddr, unsigned char Data)
@@ -1459,7 +1492,12 @@ EXPORT_SYMBOL(g_w1_hif_ops);
 EXPORT_SYMBOL(aml_sdio_init);
 EXPORT_SYMBOL(aml_sdio_exit);
 EXPORT_SYMBOL(g_hif_sdio_ops);
+EXPORT_SYMBOL(aml_priv_to_func);
 #ifdef CHIP_RESET_SUPPORT
 EXPORT_SYMBOL(g_sdio_reset_work);
 #endif
+EXPORT_SYMBOL(g_bt_resume_func);
+EXPORT_SYMBOL(g_bt_suspend_func);
+
+
 
