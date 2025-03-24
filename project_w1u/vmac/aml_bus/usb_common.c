@@ -20,6 +20,9 @@ int bt_wt_ptr = 0;
 int bt_rd_ptr = 0;
 struct aml_pm_type g_wifi_pm;
 
+typedef void (*bt_shutdown_func)(void);
+bt_shutdown_func g_bt_shutdown_func = NULL;
+
 void auc_build_cbw(struct crg_msc_cbw *cbw_buf,
                                unsigned char dir,
                                unsigned int len,
@@ -538,3 +541,4 @@ EXPORT_SYMBOL(g_wifi_pm);
 #endif
 EXPORT_SYMBOL(wifi_usb_access);
 EXPORT_SYMBOL(g_lp_shutdown_func);
+EXPORT_SYMBOL(g_bt_shutdown_func);
