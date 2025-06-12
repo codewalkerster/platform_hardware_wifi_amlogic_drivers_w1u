@@ -1,4 +1,5 @@
 #include "usb_common.h"
+#include <linux/version.h>
 #include "chip_intf_reg.h"
 #include "aml_interface.h"
 unsigned char wifi_usb_access = 1;
@@ -468,7 +469,9 @@ static struct usb_driver aml_usb_common_driver = {
     .resume = auc_resume,
 #endif
     .reset_resume = auc_reset_resume,
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(6, 8, 0)
     .drvwrap.driver.shutdown = auc_shutdown,
+#endif
 };
 
 

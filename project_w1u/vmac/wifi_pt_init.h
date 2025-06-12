@@ -42,7 +42,8 @@
 #include <linux/string.h>
 #endif
 
-
+#include <linux/semaphore.h>
+#include <linux/completion.h>
 
 #include "wifi_pt_conf.h"
 #include "wifi_pt_network.h"

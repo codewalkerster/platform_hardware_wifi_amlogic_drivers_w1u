@@ -115,6 +115,7 @@ unsigned char hal_chk_replay_cnt(struct hal_private *hal_priv,HW_RxDescripter_bi
     unsigned char offset = 0;
     unsigned char is_group = AML_UCAST_TYPE;
     unsigned int repcnt_diff = 0;
+    unsigned char *frm = RxPrivHdr->data;
 
     if (WIFI_ADDR_ISGROUP(RxPrivHdr->data))
     {
@@ -130,7 +131,7 @@ unsigned char hal_chk_replay_cnt(struct hal_private *hal_priv,HW_RxDescripter_bi
 
         ASSERT(AmlmS_opt->get_stationid != NULL);
         wnet_vif_id = RxPrivHdr_bit->RxA1match_id;//address 1 always be rx_end's mac address.
-        ret = AmlmS_opt->get_stationid(hal_priv->drv_priv, &RxPrivHdr->data[10], wnet_vif_id, &staid);
+        ret = AmlmS_opt->get_stationid(hal_priv->drv_priv, frm + 10, wnet_vif_id, &staid);
 
         if (ret < 0)
         {
@@ -2971,6 +2972,7 @@ int hal_rx_thread(void *param)
     unsigned long rx_fifo_fdt;
     unsigned int rx_fifo_total_len = 0;
 #if 1
+    unsigned char *frame;
     unsigned short frame_control;
     unsigned short sn;
 #endif
@@ -3074,13 +3076,15 @@ int hal_rx_thread(void *param)
             rx_fifo_fdh = CIRCLE_Addition2(rx_fifo_fdh,  mpdu_len, hif->rx_fifo.FDN);
 
         #if 1//for debug
+            // wifi_debug_dump_data(pVRxDesc->data, pVRxDesc->RxLength, 8);
+            frame = pVRxDesc->data;
             frame_control = *(unsigned short *)pVRxDesc->data;
-            sn = *(pVRxDesc->data + 23);
-            sn =  (sn << 4) | ((*(pVRxDesc->data + 22) & 0xf0) >> 4);
+            sn = *(frame + 23);
+            sn =  (sn << 4) | ((*(frame + 22) & 0xf0) >> 4);
 
             if (frame_control != 0x80) {
                 AML_PRINT(AML_LOG_ID_XMIT,AML_LOG_LEVEL_DEBUG, "frame type:0x%x, seq:%d, %04x:%04x\n", frame_control, sn,
-                    *((unsigned short *)(pVRxDesc->data) + 15), *((unsigned short *)(pVRxDesc->data) + 16));
+                    *((unsigned short *)(frame) + 15), *((unsigned short *)(frame) + 16));
             } else {
                 //__D(BIT(17), "%s:%d, beacon:0x%x, seq:%d\n", __func__, __LINE__, frame_control, sn);
             }

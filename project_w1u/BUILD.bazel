@@ -1,0 +1,137 @@
+load("@kleaf//build/kernel/kleaf:kernel.bzl", "ddk_headers", "ddk_module")
+load("//driver_modules/wifi_bt/wifi:configs/wifi_ko_list.bzl", "driver_files")
+
+driver_files()
+
+ddk_headers(
+	name = "w1u_comm_headers",
+	hdrs = glob([
+		"vmac/aml_bus/*.h",
+		"common/*.h",
+	]),
+	linux_includes = [
+		"common",
+		"vmac/aml_bus",
+	],
+	visibility = ["//visibility:public"],
+)
+
+ddk_headers(
+	name = "w1u_headers",
+	hdrs = glob([
+		"vmac/*.h",
+		"vmac/crypto/*.h",
+	]),
+	linux_includes = [
+		"vmac",
+		"vmac/crypto",
+	],
+	visibility = ["//visibility:public"],
+)
+
+ddk_module(
+	name = "w1u_comm",
+	srcs = glob([
+		"vmac/aml_bus/*.c",
+	]),
+	hdrs = [
+		"//common_drivers:soc_headers",
+		"//driver_modules/wifi_bt/wifi/amlogic/w1u/project_w1u:w1u_comm_headers",
+		"//driver_modules/wifi_bt/wifi/amlogic/w1u/project_w1u:w1u_headers",
+	],
+	local_defines = [
+		"SDIO_MODE_ON",
+	],
+	copts = [
+		"-Wno-sometimes-uninitialized",
+		"-Wno-implicit-function-declaration",
+		"-Wno-uninitialized",
+		"-Wno-unused-variable",
+		"-Wno-return-type",
+		"-Wno-pointer-to-int-cast",
+	],
+	out = "w1u_comm.ko",
+	kernel_build = "//common_drivers:amlogic",
+	visibility = ["//visibility:public"],
+	deps = [
+		"//common_drivers/drivers/mmc/host:amlogic-mmc",
+		"//common_drivers/drivers/wireless:amlogic-wireless",
+	],
+)
+
+ddk_module(
+	name = "w1u",
+	srcs = glob([
+		"vmac/*.c",
+		"vmac/linux/*.c",
+		"vmac/crypto/*.c",
+	]),
+	hdrs = [
+		"//common_drivers:soc_headers",
+		"//driver_modules/wifi_bt/wifi/amlogic/w1u/project_w1u:w1u_comm_headers",
+	],
+	local_defines = [
+		"SDIO_MODE_ON",
+		"SYSTEM64",
+		"HAL_FPGA_VER",
+		"COMPAT_KERNEL_RELEASE=1",
+		"CONFIG_WAPI",
+		"PHY_TEST_FUNC",
+		"CONFIG_CONCURRENT_MODE",
+		"PROJECT_W1",
+		"INTER_BEACON",
+		"SRAM_CONCURRENT",
+		"CTS_VERIFIER_GAS",
+		"RX_PN_CHECK",
+		"CONFIG_AML_USE_STATIC_BUF",
+		"SDIO_BUILD_IN",
+		"SU_BF",
+		"MU_BF",
+		"USB_BUILD_IN",
+		"FW_RF_CALIBRATION",
+		"HOST",
+		"DYNAMIC_BW",
+		"WFA_P2P_TEST",
+		"NOT_AMLOGIC_PLATFORM",
+		"SUPPORT_80211W",
+		"AML_WPA3",
+		"CONFIG_SDIO_IF",
+		"FPGA",
+		"WITH_RF",
+		"RF_T9026",
+		"CONFIG_MAC_SUPPORT",
+		"WIFI_CAPTURE",
+		"USE_T902X_RF",
+		"CONFIG_P2P",
+		"CONFIG_WFD",
+		"WIFIMAC_PATH=\"/data/vendor/wifi/wifimac.txt\"",
+	],
+	copts = [
+		"-Wno-sometimes-uninitialized",
+		"-Wno-implicit-function-declaration",
+		"-Wno-uninitialized",
+		"-Wno-unused-variable",
+		"-Wno-unused-function",
+		"-Wno-return-type",
+		"-Wno-pointer-to-int-cast",
+		"-Wno-array-bounds",
+		"-Wno-format",
+		"-Wno-strict-prototypes",
+		"-Wno-incompatible-function-pointer-types",
+		"-Wno-enum-conversion",
+		"-Wno-incompatible-pointer-types-discards-qualifiers",
+		"-Wno-incompatible-pointer-types",
+		"-Wno-enum-compare",
+		"-Wno-attribute-warning",
+		"-Wno-frame-larger-than",
+		"-Wno-implicit-fallthrough",
+	],
+	out = "w1u.ko",
+	kernel_build = "//common_drivers:amlogic",
+	visibility = ["//visibility:public"],
+	deps = [
+		"//common_drivers/drivers/mmc/host:amlogic-mmc",
+		"//common_drivers/drivers/wireless:amlogic-wireless",
+		"//driver_modules/wifi_bt/wifi/amlogic/w1u/project_w1u:w1u_comm",
+	],
+)
