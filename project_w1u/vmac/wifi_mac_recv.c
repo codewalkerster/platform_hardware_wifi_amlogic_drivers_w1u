@@ -3490,8 +3490,8 @@ void wifi_mac_recv_beacon(struct wlan_net_vif *wnet_vif,
         if ((scan.tim != NULL) && (wifi_mac_pwrsave_is_sta_sleeping(wnet_vif) == 0)
             && ((wnet_vif->vm_pstxqueue_flags & WIFINET_PSQUEUE_PS4QUIET) == 0)) {
             int flag_tim_dtim_proc = 0;
-
             struct wifi_mac_tim_ie *tim = (struct wifi_mac_tim_ie *) scan.tim;
+            unsigned char *tim_bitmap = tim->tim_bitmap;
             int aid = WIFINET_AID(sta->sta_associd);
             int ix = aid / NBBY;
             int min = tim->tim_bitctl &~ 1;
@@ -3506,7 +3506,7 @@ void wifi_mac_recv_beacon(struct wlan_net_vif *wnet_vif,
             }
 
             /*FIXME: when we need receive broadcast frames, if can we ingore the processing of TIM ?  */
-            if ((min <= ix) && (ix <= max) && isset(tim->tim_bitmap - min, aid)) {
+            if ((min <= ix) && (ix <= max) && isset(tim_bitmap - min, aid)) {
                 wifi_mac_pwrsave_proc_tim(wnet_vif);
                 flag_tim_dtim_proc = 2;
             }
