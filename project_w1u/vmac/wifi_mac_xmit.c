@@ -121,36 +121,74 @@ int wifi_mac_classify(struct wifi_station *sta, struct sk_buff *skb)
     return 0;
 }
 
+static char* is_rtsp(char *buf)
+{
+    char* rtsp_data = NULL;
+    const char *rtsp_str = "RTSP/1.0";
+
+    rtsp_data = strstr(buf, rtsp_str);
+
+    if (rtsp_data != NULL) {
+        AML_PRINT(AML_LOG_ID_P2P,AML_LOG_LEVEL_DEBUG, "[SP FRAME RTSP], info:%s", rtsp_data);
+    }
+
+    return rtsp_data;
+}
+
 static int is_rtsp_play(char *buf)
 {
     return buf && (*(buf + 3) | *(buf + 2) << 8 | *(buf + 1) << 16 | *buf << 24) == 0x504c4159;
 }
 
-static int is_rtsp_play_session(char *buf)
+static char* is_rtsp_play_session(char *buf)
 {
-    return buf && (*(buf + 3) | *(buf + 2) << 8 | *(buf + 1) << 16 | *buf << 24) == 0x53657373;
+    char* Play_Session = NULL;
+
+    Play_Session = strstr(buf,"Session: ");
+
+    return Play_Session;
+
 }
 
 
-void wifi_mac_get_rtsp_session(char* rtsp, struct wifi_mac_p2p* p2p)
+void wifi_mac_get_rtsp_session(struct wifi_mac_pkt_info *mac_pkt_info, char* rtsp, struct wifi_mac_p2p* p2p)
 {
     char *buf = rtsp;
-    char id_buf[8];
+    char *session_val = NULL;
+    char *session_end = NULL;
+    unsigned char session_len = 0;
+
     memset(p2p->wfd_session_id, 0, MAC_WFD_SESSION_LEN);
+
+    if ((p2p->wnet_vif->wnet_vif_id == NET80211_P2P_VMAC) && is_rtsp(buf)) {
+        mac_pkt_info->b_rtsp = 1;
+    }
+
     if (is_rtsp_play(buf)) {
-        while (buf) {
-            if (is_rtsp_play_session(buf)) {
-                break;
-            }
-            buf++;
+        buf = is_rtsp_play_session(buf);
+
+        if (buf == NULL) {
+            AML_PRINT_LOG_WRAN("No rtsp session:\n %s\n",rtsp);
+            return;
         }
-        buf += 9;
-        while (*buf != 0x0d) {
-            memset(id_buf, 0, 8);
-            sprintf(id_buf, "%d", (*buf - 0x30));
-            strcat(p2p->wfd_session_id, id_buf);
-            buf++;
+
+        session_val = buf + 9;
+        session_end = strstr(buf,"\r\n");
+
+        if (session_end != NULL) {
+            session_len = session_end - session_val + 1;
+        } else {
+            AML_PRINT_LOG_WRAN("Session end err, %s\n",buf);
+            return;
         }
+
+        if (session_len > 16) {
+            AML_PRINT_LOG_WRAN("wfd_session_id length[%d] exception:\n %s \n",session_len,rtsp);
+            return;
+        }
+
+        snprintf(p2p->wfd_session_id, session_len, "%s",session_val);
+
         AML_PRINT_LOG_INFO("wfd_session_id=%s\n", p2p->wfd_session_id);
     }
 }
@@ -191,12 +229,12 @@ void wifi_mac_xmit_pkt_parse(struct sk_buff *skb, struct wifi_mac *wifimac)
                 __constant_htonl(th->seq), __constant_htonl(th->ack_seq));
 
             rtsp = (char *)th + 32;
-            if (rtsp && sta->sta_wnet_vif->vm_p2p) {
+            if (rtsp && sta->sta_wnet_vif->vm_p2p->p2p_enable) {
                 unsigned char zero_session[MAC_WFD_SESSION_LEN] = {0};
-                wifi_mac_get_rtsp_session(rtsp, sta->sta_wnet_vif->vm_p2p);
+                wifi_mac_get_rtsp_session(mac_pkt_info, rtsp, sta->sta_wnet_vif->vm_p2p);
                 if (memcmp(sta->sta_wnet_vif->vm_p2p->wfd_session_id, zero_session, MAC_WFD_SESSION_LEN)) {
-                    wifimac->is_miracast_connect = 1;
-                    AML_PRINT_LOG_INFO("set wifimac->is_miracast_connect=%d\n",wifimac->is_miracast_connect);
+                    sta->miracast_active = 1;
+                    AML_PRINT_LOG_INFO("vid[%d] sta:%p set miracast_active=%d\n",sta->sta_wnet_vif->wnet_vif_id,sta,sta->miracast_active);
                 }
             }
 
@@ -221,7 +259,9 @@ void wifi_mac_xmit_pkt_parse(struct sk_buff *skb, struct wifi_mac *wifimac)
             mac_pkt_info->tcp_ack_seqnum = th->ack_seq;
             mac_pkt_info->tcp_src_port = th->source;
             mac_pkt_info->tcp_dst_port = th->dest;
+
             wifi_mac_tp_test_report(wifimac, __constant_htons(th->source), __constant_htons(th->dest));
+
         } else if (iphdrp->protocol == IPPROTO_UDP) {
             sta->sta_wnet_vif->txtp_stat.udp_tx_payload_total += __cpu_to_be16(uh->len) - sizeof(struct udphdr);
             if (((uh->source == 0x4400) && (uh->dest == 0x4300))
@@ -229,7 +269,6 @@ void wifi_mac_xmit_pkt_parse(struct sk_buff *skb, struct wifi_mac *wifimac)
                 if (sta->connect_status == CONNECT_DHCP_GET_ACK && sta->sta_wnet_vif->vm_use_static_ip == 0) {
                     return;
                 }
-
                 dhcp_p = (unsigned char *)((unsigned char *)uh + 8);
                 offset = 240;
                 offset_max = os_skb_get_pktlen(skb);
@@ -238,6 +277,11 @@ void wifi_mac_xmit_pkt_parse(struct sk_buff *skb, struct wifi_mac *wifimac)
                     if (dhcp_p[offset] == 53) {
                         mac_pkt_info->op_type = dhcp_p[offset + 2];
                         AML_PRINT_LOG_INFO("dhcp send status:%d\n", dhcp_p[offset + 2]);
+#ifdef CONFIG_CONCURRENT_MODE
+                        if (dhcp_p[offset + 2] == 5 && sta->sta_wnet_vif->vm_p2p_support && sta->sta_wnet_vif->vm_opmode == WIFINET_M_HOSTAP) {
+                            concurrent_channel_protect_timer_cancel(sta->sta_wnet_vif);
+                        }
+#endif
                         break;
                     }
 
@@ -254,8 +298,8 @@ void wifi_mac_xmit_pkt_parse(struct sk_buff *skb, struct wifi_mac *wifimac)
                     }
                 }
             }
-        wifi_mac_tp_test_report(wifimac, __constant_htons(uh->source), __constant_htons(uh->dest));
-        }else if (iphdrp->protocol == IPPROTO_ICMP) {
+            wifi_mac_tp_test_report(wifimac, __constant_htons(uh->source), __constant_htons(uh->dest));
+        } else if (iphdrp->protocol == IPPROTO_ICMP) {
             mac_pkt_info->b_icmp = 1;
             mac_pkt_info->op_type = icmp_header->type;
             AML_PRINT(AML_LOG_ID_FILTER,AML_LOG_LEVEL_DEBUG, "icmp pkt type:%d\n", mac_pkt_info->op_type);
@@ -265,7 +309,7 @@ void wifi_mac_xmit_pkt_parse(struct sk_buff *skb, struct wifi_mac *wifimac)
         mac_pkt_info->op_type = *(skb->data + ETHER_HDR_LEN + ARP_OPCODE_SHIFT);
     }
 
-    if (mac_pkt_info->b_arp || mac_pkt_info->b_dhcp || mac_pkt_info->b_eap) {
+    if (mac_pkt_info->b_arp || mac_pkt_info->b_dhcp || mac_pkt_info->b_eap || mac_pkt_info->b_rtsp) {
         cb->u_tid = QUEUE_TID_EE;
         txinfo->tid_index = os_skb_get_tid(skb);
     }
@@ -1491,7 +1535,6 @@ wifi_mac_add_ssid(unsigned char *frm, const unsigned char *ssid, unsigned int le
     memcpy(frm, ssid, len);
     return frm + len;
 }
-
 static unsigned char *
 wifi_mac_add_ds(unsigned char *frm, unsigned short chan_pri_num)
 {
@@ -1500,7 +1543,6 @@ wifi_mac_add_ds(unsigned char *frm, unsigned short chan_pri_num)
     *frm++ = chan_pri_num;
     return frm;
 }
-
 
 unsigned char *
 wifi_mac_add_erp(unsigned char *frm, struct wifi_mac *wifimac)
@@ -1860,6 +1902,7 @@ unsigned char *wifi_mac_add_extcap(unsigned char *frm,struct wifi_station *sta)
     ie->elem_id = WIFINET_ELEMID_EXTCAP;
     ie->elem_len = sizeof(struct wifi_mac_ie_ext_cap) - 2;
     ie->ext_capflags = 1;
+    ie->ext2_capflags[1] = 1 << 3;//BsstransitionActivated
     ie->ext3_capflags[3] = 1 << 6;
 
     return frm + sizeof(struct wifi_mac_ie_ext_cap);
@@ -1954,7 +1997,7 @@ unsigned char *
 wifi_mac_add_wide_bandwidth_subie(unsigned char *frm,struct wifi_station *sta)
 {
     struct wlan_net_vif *wnet_vif = sta->sta_wnet_vif;
-    struct wifi_channel *switch_chan = wnet_vif->csa_target.switch_chan;
+    struct wifi_channel *switch_chan = &(wnet_vif->csa_target.switch_chan);
 
     if (WIFINET_IS_CHAN_ERR(switch_chan)) {
         AML_PRINT_LOG_ERR("NULL chan\n");
@@ -1988,7 +2031,7 @@ wifi_mac_add_extended_chanswitch(unsigned char *frm,struct wifi_station *sta)
 {
     struct wifi_mac *wifimac = sta->sta_wmac;
     struct wlan_net_vif *wnet_vif = sta->sta_wnet_vif;
-    struct wifi_channel *switch_chan = wnet_vif->csa_target.switch_chan;
+    struct wifi_channel *switch_chan = &(wnet_vif->csa_target.switch_chan);
 
     *frm++ = WIFINET_ELEMID_EXTCHANSWITCHANN;
     *frm++ = 4;
@@ -2516,8 +2559,9 @@ int wifi_mac_send_probereq(struct wifi_station *sta, const unsigned char sa[WIFI
     frm = wifi_mac_add_xrates(frm, &wnet_vif->vm_legacy_rates);
     if ( WIFINET_IS_CHAN_2GHZ(wifimac->wm_curchan) && wnet_vif->wnet_vif_id == NET80211_MAIN_VMAC)
     {
-        frm = wifi_mac_add_ds(frm,wifimac->wm_curchan->chan_minpower);
+        frm = wifi_mac_add_ds(frm,wifimac->wm_curchan->chan_pri_num);
     }
+
     if (wnet_vif->vm_mac_mode >= WIFINET_MODE_11N) {
         frm = wifi_mac_add_htcap(frm, sta);
     }
@@ -3045,10 +3089,10 @@ int wifi_mac_send_assoc_req(struct wlan_net_vif *wnet_vif, struct wifi_station *
 
     if (wifi_mac_is_vht_enable(wnet_vif)) {
         frm = wifi_mac_add_vht_cap(frm, sta);
-        frm = wifi_mac_add_extcap(frm, sta);
         // not be used so far
         // frm = wifi_mac_add_vht_op_md_ntf(frm, sta);
     }
+    frm = wifi_mac_add_extcap(frm, sta);
 
     if (sta->sta_authmode == WIFINET_AUTH_OPEN) {
         if (sta->sta_rsn.rsn_keymgmtset & (1 << RSN_ASE_8021X_SAE)) {
@@ -3705,11 +3749,31 @@ int wifi_mac_send_actionframe(struct wlan_net_vif *wnet_vif, struct wifi_station
 
 int wifi_mac_send_mgmt(struct wifi_station *sta, int type, void *arg)
 {
-    struct wlan_net_vif *wnet_vif = sta->sta_wnet_vif;
+    struct wlan_net_vif *wnet_vif = NULL;
+    struct wifi_mac *wifimac = NULL;
     int ret;
     unsigned char retry_count;
+    bool Mismatched_Channel = false;
 
     KASSERT(sta != NULL, ("null nsta"));
+
+    wnet_vif = sta->sta_wnet_vif;
+    wifimac = wnet_vif->vm_wmac;
+
+    if ( wnet_vif->vm_curchan
+        && wifimac->wm_curchan
+        && (wifimac->wm_curchan->chan_pri_num != wnet_vif->vm_curchan->chan_pri_num)) {
+        Mismatched_Channel = true;
+        AML_PRINT(AML_LOG_ID_XMIT, AML_LOG_LEVEL_WARN,"frmtype[0x%x] vif[%d] chan[%d] != wifimac chan[%d] \n",
+            type,wnet_vif->wnet_vif_id,wnet_vif->vm_curchan->chan_pri_num, wifimac->wm_curchan->chan_pri_num);
+    }
+
+    if ( Mismatched_Channel
+        && (type == WIFINET_FC0_SUBTYPE_PROBE_RESP)
+        && (wnet_vif->vm_opmode == WIFINET_M_HOSTAP)
+        && (wnet_vif->vm_state == WIFINET_S_CONNECTED)) {
+        ret = EINVAL;
+    }
 
     if (sta->sta_wnet_vif->vm_curchan == NULL && !sta->sta_wnet_vif->vm_p2p_support) {
         AML_PRINT_LOG_ERR("vm_curchan is NULL, just return\n");

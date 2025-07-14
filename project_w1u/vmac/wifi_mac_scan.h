@@ -251,16 +251,18 @@ struct wifi_scan_info
 #define WIFINET_SCAN_PROTECT_TIME 1000
 #define WIFINET_SCAN_TIME_CHANNEL_SWITCH 500
 #define WIFINET_SCAN_TIME_BEFORE_CONNECT 200
+#define WIFINET_SCAN_TIME_SINGLE_CHAN_SCAN 400
+
 
 #ifndef FW_RF_CALIBRATION
-#define WIFINET_SCAN_TIME_CONNECT_DEFAULT 50
 #define WIFINET_SCAN_TIME_CONNECT_MAX 50
+#define WIFINET_SCAN_TIME_CONNECT_DEFAULT 50
 #define WIFINET_SCAN_DEFAULT_INTERVAL_COEXIST 200
 #define WIFINET_SCAN_CHANNEL_COST 20
 #define WIFINET_SCAN_INTERVAL_LEFT 10
 #else
-#define WIFINET_SCAN_TIME_CONNECT_DEFAULT 20
 #define WIFINET_SCAN_TIME_CONNECT_MAX 40
+#define WIFINET_SCAN_TIME_CONNECT_DEFAULT 20
 #define WIFINET_SCAN_DEFAULT_INTERVAL_COEXIST 200
 #define WIFINET_SCAN_CHANNEL_COST 30
 #define WIFINET_SCAN_INTERVAL_LEFT 10
@@ -339,8 +341,10 @@ int wifi_mac_scan_access(struct wlan_net_vif *wnet_vif);
 int wifi_mac_scan_forbidden_timeout(void *arg);
 unsigned char wifi_mac_scan_check_available(struct wlan_net_vif *wnet_vif);
 unsigned char wifi_mac_set_scan_dwell_time(struct wifi_mac *wifimac, unsigned short duration, unsigned char mandatory);
+struct wifi_channel* wifi_mac_connect_get_target_chan(struct wifi_mac_scan_state *ss, struct wlan_net_vif *wnet_vif);
 #ifdef PNO_SUPPORT
-int aml_send_sched_scan_req(struct wlan_net_vif *wnet_vif, struct cfg80211_sched_scan_request *request);
+int aml_build_sched_scan_request(struct wlan_net_vif *wnet_vif, struct cfg80211_sched_scan_request *request);
+int aml_send_sched_scan_req(struct wlan_net_vif *wnet_vif);
 int aml_send_sched_scan_stop(struct wlan_net_vif *wnet_vif, unsigned long long reqid);
 #endif
 

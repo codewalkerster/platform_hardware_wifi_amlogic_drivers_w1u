@@ -106,7 +106,7 @@ int dut_dump_data(unsigned int addr, unsigned char *data, int len)
                 sdio_base = (BASE_AHB_TESTBUS_CAPTURE + addr + a_cnt) & 0xffff0000;
                 hif->hif_ops.hi_write_reg32(RG_SCFG_FUNC5_BADDR_A,
                 (unsigned long)(BASE_AHB_TESTBUS_CAPTURE + addr + a_cnt) & 0xffff0000);
-                AML_PRINT_LOG_INFO("sdio base addr change ,sdio base addr=0x%08x\n", sdio_base);
+                //AML_PRINT_LOG_INFO("sdio base addr change ,sdio base addr=0x%08x\n", sdio_base);
             }
         }
 #endif
@@ -270,10 +270,10 @@ int dut_start_capture(unsigned int value)
     dut_set_reg_frag(TBC_OFFSET_114 , 16, 12, trigger);
     dut_set_reg_frag(TBC_OFFSET_114 , 8, 8, 1);// enable
 
-    AML_PRINT_LOG_INFO("start_capture: \ntmode 0x%08x, trg 0x%08x, trigger_delay_time=%d, test_bus=0x%08x\nphy100=0x%08x, phy114=0x%08x\n",
+    /*AML_PRINT_LOG_INFO("start_capture: \ntmode 0x%08x, trg 0x%08x, trigger_delay_time=%d, test_bus=0x%08x\nphy100=0x%08x, phy114=0x%08x\n",
         test_mode, trigger, trigger_delay_time, test_bus,
         hif->hif_ops.hi_read_word(TBC_OFFSET_100),
-        hif->hif_ops.hi_read_word(TBC_OFFSET_114));
+        hif->hif_ops.hi_read_word(TBC_OFFSET_114));*/
 
     return 0;
 }
@@ -470,6 +470,147 @@ int  dut_stop_tbus_to_get_sram(struct file *filep, int stop_ctrl, int save_file)
     AML_PRINT_LOG_INFO("handle capture data complete\n");
     return 1;
 }
+
+#define NOISE_SAMPLE_NUM 10
+unsigned int noise_floor_list[NOISE_SAMPLE_NUM] = {0};
+unsigned char avg_noise_cnt = 0;
+unsigned char noise_floor_print = 0;
+extern unsigned int wifi_mac_get_noise_floor_switch(void);
+void wifi_mac_reset_noise_calc(void)
+{
+    memset(noise_floor_list, 0, sizeof(unsigned int) * NOISE_SAMPLE_NUM);
+    avg_noise_cnt = 0;
+}
+
+int dut_stop_tbus_to_get_noise_floor(void)
+{
+    unsigned int read_tmp = 0;
+    unsigned int stopaddr = 0;
+    unsigned int *pdata = 0;
+    unsigned int *ptr = 0;
+    int len = 0;
+    unsigned int i = 0;
+    int cap_len = 0;
+    int temp_addr = 0;
+    int testbitwidth = 0;
+    unsigned char valid_flag = 1;
+    unsigned char agc_fsm = 0;
+    unsigned int cnt = 0;
+    unsigned long i_data = 0;
+    unsigned long q_data = 0;
+    int i_dc = 0;
+    int q_dc = 0;
+    int i_dc_avg = 0;
+    int q_dc_avg = 0;
+    unsigned int tmp = 0, cur = 0;
+
+    struct hw_interface* hif = hif_get_hw_interface();
+
+    cap_len = TBC_ADDR_END_OFFSET-TBC_ADDR_BEGIN_OFFSET;
+    read_tmp = hif->hif_ops.hi_read_word(TBC_OFFSET_114);
+
+    testbitwidth = (read_tmp & 0x1f) + 1;
+
+    read_tmp = hif->hif_ops.hi_read_word(TBC_OFFSET_114);
+    read_tmp = (read_tmp | (1 << 10) );  // tbc_stop
+    hif->hif_ops.hi_write_word(TBC_OFFSET_114, read_tmp);
+
+    stopaddr = hif->hif_ops.hi_read_word(TBC_OFFSET_120);
+    while (temp_addr != stopaddr) {
+        temp_addr = stopaddr;
+        msleep(20);
+        stopaddr = hif->hif_ops.hi_read_word(TBC_OFFSET_120);
+    }
+
+    stopaddr = (stopaddr & 0x1c) ? (stopaddr + 4) : stopaddr ;
+    if ((stopaddr <= TBC_ADDR_BEGIN_OFFSET) || (stopaddr >= TBC_ADDR_END_OFFSET)) {
+        AML_PRINT_LOG_ERR("stopaddr=0x%x out of capture range\n", stopaddr);
+        return 0;
+    }
+
+    hif->hif_ops.hi_write_word(TBC_RAM_SHARE, TBC_RAM_SHARE_MASK); //ram share enable
+    dut_dump_data(stopaddr, &readbuf[0], TBC_ADDR_END_OFFSET-stopaddr);
+    dut_dump_data(TBC_ADDR_BEGIN_OFFSET, &readbuf[TBC_ADDR_END_OFFSET-stopaddr], stopaddr - TBC_ADDR_BEGIN_OFFSET);
+
+    pdata = (unsigned int *)&readbuf[0];
+
+    for (i = 0; i < (TBC_ADDR_END_OFFSET-TBC_ADDR_BEGIN_OFFSET); i += INBUFFER_LEN) {
+        len += dut_v32_tx((unsigned int *)&testbuf[len], (unsigned int *)&readbuf[i], testbitwidth);
+    }
+
+    pdata = ptr = (unsigned int *)&testbuf[0];
+    for (i=0; i<len/4; i++) {
+        agc_fsm = (pdata[i] >> 22) & 0x0f;
+        if (agc_fsm != 3) {
+            valid_flag = 0;
+            break;
+        }
+        tmp = (pdata[i] & 0x3ff);
+        if (tmp & 0x200)
+            i_dc += tmp - (1<<10);
+        else
+            i_dc += tmp;
+
+        tmp = ((pdata[i]>>12) & 0x3ff);
+        if (tmp & 0x200)
+            q_dc += tmp - (1<<10);
+        else
+            q_dc += tmp;
+    }
+    if (valid_flag) {
+        i_dc_avg = i_dc/(len/4);
+        q_dc_avg = q_dc/(len/4);
+        for (i=0; i<len/4; i++) {
+            tmp = (pdata[i] & 0x3ff);
+            if (tmp & 0x200)
+                i_data += (tmp - (1<<10) - i_dc_avg) * (tmp - (1<<10) - i_dc_avg);
+            else
+                i_data += (tmp - q_dc_avg) * (tmp - q_dc_avg);
+
+            tmp = ((pdata[i]>>12) & 0x3ff);
+            if (tmp & 0x200)
+                q_data += (tmp - (1<<10) - q_dc_avg) * (tmp - (1<<10) - q_dc_avg);
+            else
+                q_data += (tmp - q_dc_avg) * (tmp - q_dc_avg);
+        }
+    }
+
+    if ((wifi_mac_get_noise_floor_switch() >= 2 && valid_flag) || wifi_mac_get_noise_floor_switch() >= 3) {
+        noise_floor_print = 1;
+        for (i = 0; i < len; i += 4) {
+            AML_PRINT_LOG_INFO("data[%4d]:%08x", i/4, *ptr);
+            if (i % 60 == 0)
+                msleep(10);
+            ptr++;
+        }
+        noise_floor_print = 0;
+    }
+
+    if (valid_flag) {
+        cur = noise_floor_list[avg_noise_cnt] = (i_data + q_data)/(len/4);
+
+        //noise_floor_list[avg_noise_cnt] = noise_floor = 10 * log10(cur) - 110; //dbm
+
+        avg_noise_cnt++;
+        if (avg_noise_cnt >= NOISE_SAMPLE_NUM)
+            avg_noise_cnt = 0;
+        tmp = 0;
+        for (i=0; i<NOISE_SAMPLE_NUM; i++) {
+            if (noise_floor_list[i] != 0) {
+                tmp += noise_floor_list[i];
+                cnt++;
+            } else {
+                break;
+            }
+        }
+
+        if (cnt != 0)
+            AML_PRINT_LOG_INFO("noise_floor[%d] avg:%d, cur:%d\n", cnt, tmp/cnt, cur);
+    }
+
+    return 1;
+}
+
 
 //0:use sw stop   1:use hw stop
 int iwp_stop_tbus_to_get_sram(unsigned char *buf)

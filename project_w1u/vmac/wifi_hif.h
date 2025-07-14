@@ -139,6 +139,8 @@ struct amlw_hif_ops {
     int (*hif_suspend)(unsigned int suspend_enable);
 
     unsigned int (*hi_read_efuse)(unsigned int addr);
+    void (*hi_read_mem)(unsigned char *buf, unsigned char *addr, SYS_TYPE len);
+    void (*hi_write_mem)(unsigned char *buf, unsigned char *addr, SYS_TYPE len);
 };
 
 void hi_clear_irq_status(unsigned int data);

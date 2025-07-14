@@ -73,7 +73,7 @@ extern void set_usb_bt_power(int is_on);
 #define RG_SDIO_IF_MISC_CTRL (WIFI_SDIO_IF+0x80)
 #define RG_SDIO_IF_MISC_CTRL2 (WIFI_SDIO_IF+0x84)
 #define RG_SCFG_FUNC5_BADDR_A (0x8150)
-
+#define RG_SCFG_FUNC7_BADDR_A (0x8170)
 
 #define SDIO_ADDR_MASK (128 * 1024 - 1)
 #define SDIO_OPMODE_INCREMENT 1
@@ -217,6 +217,8 @@ struct amlw1_hif_ops {
 
     int (*hif_suspend)(unsigned int suspend_enable);
     unsigned int (*hi_read_efuse)(unsigned int addr);
+    void (*hi_read_mem)(unsigned char *buf, unsigned char *addr, SYS_TYPE len);
+    void (*hi_write_mem)(unsigned char *buf, unsigned char *addr, SYS_TYPE len);
 };
 
 struct aml_hif_sdio_ops {
@@ -270,3 +272,5 @@ struct aml_hif_sdio_ops {
     int (*hif_suspend)(unsigned int suspend_enable);
 };
 
+void aml_sdio_read_mem(unsigned char *buf, unsigned char *addr, SYS_TYPE len);
+void aml_sdio_write_mem(unsigned char *buf, unsigned char *addr, SYS_TYPE len);

@@ -377,10 +377,11 @@ extern unsigned char print_type;
 static void drv_print_fwlog_ex( SYS_TYPE param1,SYS_TYPE param2,SYS_TYPE param3,
     SYS_TYPE param4,SYS_TYPE param5)
 {
+    struct hal_private *hal_priv = hal_get_priv();
     unsigned char* logbuf_ptr = (unsigned char *)param1;
     int databyte = (int)param2;
-    //unsigned char new_string[64] = {0};
-    //int i = 0;
+    unsigned char new_string[64] = {0};
+    int i = 0;
 
     if (print_type == 1) //auto
     {
@@ -395,29 +396,31 @@ static void drv_print_fwlog_ex( SYS_TYPE param1,SYS_TYPE param2,SYS_TYPE param3,
     if (g_trace_nl_info.enable) {
         aml_send_log_to_user(logbuf_ptr, (int)param2, AML_TRACE_FW_LOG_UPLOAD);
     } else {
-        storeFwlogToFile(logbuf_ptr, databyte);
-    }
-    /* print process */
-    /*AML_PRINT_LOG_INFO("logbuf_ptr 0x%x\n", logbuf_ptr);
-    AML_PRINT_LOG_INFO("fw_log:\n");
-    while (databyte--)
-    {
-        if ((*logbuf_ptr == '\n') || (i == 63)) {
-            new_string[i] = *logbuf_ptr;
+        if (hal_priv->g_get_fw_log == FWLOG_SAVE_TO_FILE) {
+            storeFwlogToFile(logbuf_ptr, databyte);
+        } else if (hal_priv->g_get_fw_log == FWLOG_PRINT_TO_CONSOLE) {
+            AML_PRINT_LOG_INFO("logbuf_ptr 0x%x\n", logbuf_ptr);
+            AML_PRINT_LOG_INFO("fw_log:\n");
+            while (databyte--)
+            {
+                if ((*logbuf_ptr == '\n') || (i == 63)) {
+                    new_string[i] = *logbuf_ptr;
+                    AML_PRINT_LOG_INFO("%s", new_string);
+                    memset(new_string, 0, 64);
+                    i = 0;
+                } else {
+                    new_string[i] = *logbuf_ptr;
+                    i++;
+                }
+
+                logbuf_ptr++;
+            }
+            /* exit the loop and need to print the remaining characters */
             AML_PRINT_LOG_INFO("%s", new_string);
-            memset(new_string, 0, 64);
-            i = 0;
-        } else {
-            new_string[i] = *logbuf_ptr;
-            i++;
+            AML_PRINT_LOG_INFO("\nfwlog_print end\n");
         }
+    }
 
-        logbuf_ptr++;
-    }*/
-    /* exit the loop and need to print the remaining characters */
-    //AML_PRINT_LOG_INFO("%s", new_string);
-
-    //AML_PRINT_LOG_INFO("\nfwlog_print end\n");
 }
 
 static void drv_print_fwlog(unsigned char *logbuf_ptr, int databyte)
@@ -570,6 +573,20 @@ static void drv_set_mac_addr( struct drv_private *drv_priv, unsigned char wnet_v
 {
     driv_ps_wakeup(drv_priv);
     drv_hal_setmac(wnet_vif_id, macaddr);
+    driv_ps_sleep(drv_priv);
+}
+
+static void drv_set_hal_opmode( struct drv_private *drv_priv, unsigned char wnet_vif_id, enum hal_op_mode opmode)
+{
+    driv_ps_wakeup(drv_priv);
+    drv_hal_setopmode(wnet_vif_id, opmode);
+    driv_ps_sleep(drv_priv);
+}
+
+static void drv_set_dhcp( struct drv_private *drv_priv, unsigned char wnet_vif_id, unsigned int ip)
+{
+    driv_ps_wakeup(drv_priv);
+    drv_hal_setdhcp(wnet_vif_id, ip);
     driv_ps_sleep(drv_priv);
 }
 
@@ -1022,6 +1039,7 @@ int drv_add_wnet_vif(struct drv_private *drv_priv,
     wnet_vif = (struct wlan_net_vif *)if_data;
     /* Set the VMAC opmode */
     wnet_vif->vm_hal_opmode = vm_opmode;
+    wnet_vif->vm_ipv4 = ip;
     AML_PRINT_LOG_INFO("<%s> hal_opmode=%d \n", VMAC_DEV_NAME(wnet_vif), wnet_vif->vm_hal_opmode);
 
     drv_priv->drv_wnet_vif_table[wnet_vif_id] = wnet_vif;
@@ -1085,6 +1103,7 @@ drv_change_wnet_vif(struct drv_private * drv_priv, int wnet_vif_id,
         drv_set_bssid(drv_priv, wnet_vif_id, myaddr);
 
     wnet_vif->vm_hal_opmode = vm_opmode;
+    wnet_vif->vm_ipv4 = ip;
 
     drv_hal_setmac(wnet_vif_id, myaddr);
     drv_hal_setopmode(wnet_vif_id, vm_opmode);
@@ -1474,6 +1493,8 @@ static void drv_init_ops(struct drv_private *drv_priv)
     drv_priv->drv_ops.process_uapsd_trigger = drv_process_uapsd_nsta_trigger;  /* process_uapsd_trigger */
     drv_priv->drv_ops.uapsd_qcnt = drv_tx_uapsd_nsta_qcnt;         /* uapsd_qcnt */
     drv_priv->drv_ops.set_macaddr = drv_set_mac_addr;        /* set_macaddr */
+    drv_priv->drv_ops.set_halopmode = drv_set_hal_opmode;       /* set hal op_mode */
+    drv_priv->drv_ops.set_dhcp = drv_set_dhcp;      /* set ipv4 */
     drv_priv->drv_ops.Low_register_behindTask = drv_low_reg_behind_task; /* Low_register_behindTask */
     drv_priv->drv_ops.Low_callRegisteredTask = drv_low_call_task;  /* Low_callRegisteredTask */
     drv_priv->drv_ops.Low_addDHWorkTask = drv_low_add_worktask;   /* Low_addDHWorkTask */
@@ -1574,7 +1595,6 @@ int aml_drv_attach( struct drv_private *drv_priv, struct wifi_mac* wmac)
     drv_priv->wait_mpdu_timeout = 1;
     drv_priv->add_wakeup_work = 0;
     drv_priv->stop_noa_flag = 0;
-    wmac->wm_disconnect_code = DISCONNECT_DRVINIT;
 
     drv_hal_attach(drv_priv, (void *)get_hal_call_back_table());    //attach hal
 
@@ -1647,6 +1667,7 @@ int aml_drv_attach( struct drv_private *drv_priv, struct wifi_mac* wmac)
     drv_priv->drv_config.cfg_mac_mode = DEFAULT_AUTO;
     drv_priv->drv_config.cfg_band = DEFAULT_BAND_ALL;
     drv_priv->drv_config.cfg_recovery = DEFAULT_SUPPORT_RECOVERY;
+    drv_priv->drv_config.cfg_adaptive_mode = DISABLE;
 
     if (aml_bus_type) {
         drv_priv->drv_config.cfg_checksumoffload    = USB_DEFAULT_HW_CSUM;
@@ -1797,34 +1818,20 @@ static void drv_tx_pkt_clear(void *drv_priv)
 }
 
 static void
-drv_intr_rx_ok(void * dpriv,struct sk_buff *skb, unsigned long long PN, unsigned char encrypt, unsigned char Rssi,unsigned char vendor_rate_code,
-    unsigned char channel, unsigned char aggr, unsigned char wnet_vif_id, unsigned char keyid, unsigned int channel_bw, unsigned int rx_sgi)
+drv_intr_rx_ok(void * dpriv,struct sk_buff *skb, struct wifi_mac_rx_status *rxstatus)
 {
     struct wifi_mac *wifimac;
     struct drv_private *drv_priv = (struct drv_private *)dpriv;
-
     struct sk_buff *skbbuf = (struct sk_buff *)skb;
     struct wifi_frame *wh;
-    struct wifi_mac_rx_status rxstatus = {0};
-    wifimac = drv_priv->wmac;
 
-    rxstatus.rs_pn = PN;
-    rxstatus.rs_encrypt = encrypt;
-    rxstatus.rs_flags = aggr;
-    rxstatus.rs_channel = channel;
-    rxstatus.rs_rssi = Rssi;
-    rxstatus.rs_tstamp.tsf = jiffies;
-    rxstatus.rs_wnet_vif_id = wnet_vif_id;
-    rxstatus.rs_keyid = keyid;
-    rxstatus.rs_vendor_rate_code = vendor_rate_code;
-    rxstatus.channel_bw = channel_bw;
-    rxstatus.rs_sgi = rx_sgi;
+    wifimac = drv_priv->wmac;
 
     wh = (struct wifi_frame *)os_skb_data(skb);
     if (!list_empty(&wifimac->wm_wnet_vifs))
     {
         drv_priv->drv_stats.rx_indicate_cnt++;
-        drv_priv->net_ops->wifi_mac_rx_complete(wifimac, skbbuf, &rxstatus);
+        drv_priv->net_ops->wifi_mac_rx_complete(wifimac, skbbuf, rxstatus);
     }
     else
     {
@@ -2088,7 +2095,7 @@ static void drv_intr_bcn_send_ok(void * dpriv,unsigned char vma_id)
         (wnet_vif->vm_opmode == WIFINET_M_IBSS))
     {
         drv_tx_get_mgmt_frm_rate(drv_priv, wnet_vif->vm_mac_mode,
-            WIFINET_FC0_TYPE_MGT | WIFINET_FC0_SUBTYPE_BEACON, &rate, &flag);
+            WIFINET_FC0_TYPE_MGT | WIFINET_FC0_SUBTYPE_BEACON, &rate, &flag,1);
 
         WIFINET_BEACONBUF_LOCK(wifimac);
         skb = wnet_vif->vm_beaconbuf;
@@ -2512,6 +2519,15 @@ static void drv_intr_fw_event(void *dpriv, void *event)
             break ;
         }
 
+        case COEX_EVENT:
+        {
+            coex_event *coex_event_info = (coex_event *)fw_event;
+            printk("co:%d,%d,%d,s:%d\n", coex_event_info->data_info.fdd_time/1000,
+                coex_event_info->data_info.tdd_actime/1000, coex_event_info->data_info.tdd_inactime/1000,
+                (coex_event_info->data_info.fdd_time + coex_event_info->data_info.tdd_actime +coex_event_info->data_info.tdd_inactime)/1000);
+            break ;
+        }
+
         default:
             break;
     }
@@ -2592,12 +2608,12 @@ static void drv_intr_bt_info_change(void * dpriv, unsigned char wnet_vif_id,unsi
             break;
         }
 
-        if ((p_wifi_mac->bt_lk != (!((reg_val2 & BIT(31)) >> 31) && (((reg_val & BIT(24)) >> 24) || ((reg_val & BIT(25)) >> 25))))
+        if ((p_wifi_mac->bt_lk != (!((reg_val2 & BIT(31)) >> 31) && (((reg_val & BIT(24)) >> 24) || ((reg_val & BIT(23)) >> 23))))
             || (bt_lk_change == 1))
         {
-             p_wifi_mac->bt_lk = (!((reg_val2 & BIT(31)) >>   31) && (((reg_val & BIT(24)) >> 24) || ((reg_val & BIT(25)) >> 25)));
+             p_wifi_mac->bt_lk = (!((reg_val2 & BIT(31)) >>   31) && (((reg_val & BIT(24)) >> 24) || ((reg_val & BIT(23)) >> 23)));
              wifi_mac_set_channel_rssi(p_wifi_mac, (unsigned char)(wnet_vif->vm_mainsta->sta_avg_bcn_rssi));
-             AML_PRINT_LOG_INFO("p_wifi_mac->bt_lk,value=%d %d %d %d\n", p_wifi_mac->bt_lk, !((reg_val2 & BIT(31)) >> 31), ((reg_val & BIT(24)) >> 24), ((reg_val & BIT(25)) >> 25));
+             AML_PRINT_LOG_INFO("p_wifi_mac->bt_lk,value=%d %d %d %d\n", p_wifi_mac->bt_lk, !((reg_val2 & BIT(31)) >> 31), ((reg_val & BIT(24)) >> 24), ((reg_val & BIT(23)) >> 23));
         }
 
         if (bt_lk_change == 1) {/*BT link info change*/

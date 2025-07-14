@@ -88,6 +88,7 @@ struct hw_interface;
 
 #include "wifi_hal_platform.h"
 #include "wifi_hif.h"
+#include "wifi_mac_rx_status.h"
 
 
 //////////////////value ////////////////////////
@@ -329,17 +330,6 @@ struct reg_table
     unsigned int regdata;
 };
 
-struct  PHY_PRIMARY_CHANNEL_BIT
-{
-    unsigned int    primary_channel         :8,
-             central_frequency              :8,
-             start_frequency                :8,
-             def_pri_ch                     :3,
-             pri_ch_cfg_sel                 :1,
-             ap_bw                          :2,
-             rf_fs                          :2;
-};
-
 ///< Common signature of task handlers.
 typedef void (*WorkHandler)(SYS_TYPE param1,SYS_TYPE param2,
     SYS_TYPE param3,SYS_TYPE param4,SYS_TYPE param5); 
@@ -376,9 +366,10 @@ struct  hal_work_task
 #define ICCM_ROM_LEN    (128 * 1024)
 #define ICCM_RAM_LEN    (64 * 1024)
 #define DCCM_LEN        (48 * 1024)
-#define EXT_RAM_LEN     (16 * 1024)
-#define SRAM_LEN        (16 * 1024)
+#define SRAM_LEN        (32 * 1024)
 #define ICCM_ALL_LEN    (ICCM_ROM_LEN + ICCM_RAM_LEN)
+#define OFFLOAD_PKT_RAM_LEN     (32 * 1024)
+#define MAC_EXTEND_CODE_BASE 0x914000
 
 // for check
 #define ICCM_BUFFER_RD_LEN  (ICCM_RAM_LEN)
@@ -1042,8 +1033,10 @@ struct hal_layer_ops
     unsigned char dpd_wait_pkt_clear;
     unsigned char hal_max_mpdu_num;
     unsigned char dpd_process_flag;
-    bool g_get_fw_log;
+    unsigned char g_get_fw_log;
     unsigned char hal_fw_log_flag;
+
+    unsigned char power_table[5][16];
 };
 
 /*** aml platform***/
@@ -1380,8 +1373,7 @@ struct aml_hal_call_backs
     void (*intr_tx_handle)(void *drv_prv, struct txdonestatus *tx_done_status, SYS_TYPE callback, unsigned char queue_id);
     void (*intr_tx_ok_timeout)(void *drv_prv);
     void (*intr_tx_pkt_clear)(void *drv_prv);
-    void (*intr_rx_handle)(void *drv_prv,struct sk_buff *skb,unsigned long long PN, unsigned char encrypt, unsigned char Rssi,unsigned char RxRate,
-        unsigned char channel,  unsigned char aggr, unsigned char wnet_vif_id,unsigned char keyid, unsigned int channel_bw, unsigned int rx_sgi);
+    void (*intr_rx_handle)(void *drv_prv,struct sk_buff *skb,struct wifi_mac_rx_status *rxstatus);
     int (*pmf_encrypt_pkt_handle)(void *drv_prv, struct sk_buff *skb, unsigned char rssi, unsigned char RxRate,
         unsigned char channel,  unsigned char aggr, unsigned char wnet_vif_id,unsigned char keyid, unsigned int channel_bw, unsigned int rx_sgi);
     void (*intr_bcn_send)(void *  drv_prv,unsigned char wnet_vif_id);

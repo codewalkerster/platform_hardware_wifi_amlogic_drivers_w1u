@@ -53,8 +53,10 @@ extern unsigned char aml_bus_type;
 unsigned char hal_set_sys_clk(int clockdiv);
 unsigned char hal_set_sys_clk_Core(unsigned int addr, unsigned int value);
 int hal_download_sdio_fw_img(void);
+int hal_download_sdio_offload_fw_img(void);
 #ifdef CONFIG_USB
 int hal_download_usb_fw_img(void);
+int hal_download_usb_offload_fw_img(void);
 #endif
 unsigned int bbpll_init(void);
 unsigned int bbpll_start (void);
@@ -77,6 +79,7 @@ extern unsigned int aml_wifi_get_platform_verid(void);
 extern char *aml_wifi_get_bus_type(void);
 extern char *aml_wifi_get_fw_type(void);
 extern unsigned int aml_wifi_is_enable_rf_test(void);
+extern int aml_wifi_is_enable_pwr_limit(void);
 extern void aml_w1_fw_recovery(void *drv_priv);
 
 #endif

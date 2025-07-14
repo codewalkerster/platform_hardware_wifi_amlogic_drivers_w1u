@@ -25,7 +25,6 @@ typedef struct TXTParameter
     unsigned char ant_gpio_cfg;
     unsigned char wifi_fwlog_by_file;
     unsigned char channel_2g_20Mhz_only;
-    unsigned char country_ie_report;
     unsigned char scan_abort_enable;
     unsigned char scan_interval_thr;
 } TXTParameter;
@@ -109,6 +108,7 @@ unsigned int phy_set_coexist_max_not_grant_cnt( unsigned int coexist_max_not_gra
 unsigned int phy_set_coexist_scan_priority_range( unsigned int coexist_scan_priority_range);
 unsigned int phy_set_coexist_be_bk_noqos_priority_range( unsigned int coexist_scan_priority_range);
 unsigned int phy_coexist_config(const void *data, int data_len);
+unsigned int phy_get_coexist_status(void);
 unsigned int phy_interface_enable(unsigned char enable, unsigned char vid);
 unsigned int hal_set_fwlog_cmd(unsigned char mode);
 unsigned int hal_cfg_cali_param(void);
@@ -119,7 +119,6 @@ int aml_send_me_shutdown(void);
 void phy_set_cf_end(unsigned char vid, unsigned char is_enable);
 unsigned char hal_ant_sel_en_get(void);
 unsigned char hal_get_channel_2g_20Mhz_only(void);
-TXTParameter *hal_get_txt_parameter(void);
 void phy_get_queue_debug_info(unsigned char vid);
 
 #endif  //__AML_PHY_H__

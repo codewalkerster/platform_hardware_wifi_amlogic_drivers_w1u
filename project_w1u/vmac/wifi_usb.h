@@ -96,6 +96,7 @@ int stop_wifi(void);
 int wifi_fw_download(void);
 int wifi_iccm_download(unsigned char* addr, unsigned int len);
 int wifi_dccm_download(unsigned char* addr, unsigned int len);
+int wifi_fw_bin_sections_download(unsigned int base_addr, unsigned char *src, unsigned int len);
 unsigned int aml_usb_read_word(unsigned int addr);
 unsigned long aml_usb_read_byte(unsigned long addr);
 void aml_usb_write_word(unsigned int addr,unsigned int data);

@@ -538,8 +538,9 @@ int wifi_dccm_download(unsigned char *src, unsigned int len)
     struct usb_device *udev = hif->udev;
 
     AML_PRINT_LOG_INFO("dccm_downed, addr 0x%x, len %d \n", src, len);
-    aml_usb_build_cbw(g_cbw_buf, AML_XFER_TO_DEVICE, len, CMD_DOWNLOAD_WIFI, base_addr, 0, len);
     USB_BEGIN_LOCK();
+    aml_usb_build_cbw(g_cbw_buf, AML_XFER_TO_DEVICE, len, CMD_DOWNLOAD_WIFI, base_addr, 0, len);
+
     /* cmd stage */
     ret = aml_usb_bulk_msg(udev, usb_sndbulkpipe(udev, USB_EP1), (void*)g_cbw_buf,sizeof(*g_cbw_buf),&actual_length, AML_USB_CONTROL_MSG_TIMEOUT);
     if (ret) {
@@ -581,9 +582,55 @@ int wifi_dccm_download(unsigned char *src, unsigned int len)
         offset += trans_len;
     }
 #endif
-
     return 0;
 }
+
+int wifi_fw_bin_sections_download(unsigned int base_addr, unsigned char *src, unsigned int len)
+{
+    unsigned int offset = 0;
+    unsigned int trans_len = len;
+    int ret;
+    unsigned int actual_length;
+    struct hw_interface *hif = hif_get_hw_interface();
+    struct usb_device *udev = hif->udev;
+
+    AML_PRINT_LOG_INFO("bin_download, addr:0x%08x, len:%d, base_addr:0x%08x\n", src, len, base_addr);
+    USB_BEGIN_LOCK();
+    aml_usb_build_cbw(g_cbw_buf, AML_XFER_TO_DEVICE, len, CMD_DOWNLOAD_WIFI, base_addr, 0, len);
+
+    /* cmd stage */
+    ret = aml_usb_bulk_msg(udev, usb_sndbulkpipe(udev, USB_EP1), (void *)g_cbw_buf, sizeof(*g_cbw_buf), &actual_length, AML_USB_CONTROL_MSG_TIMEOUT);
+    if (ret) {
+        AML_PRINT_LOG_ERR("Failed to usb_bulk_msg, ret %d\n", ret);
+        FREE(g_cbw_buf, "cmd stage");
+        USB_END_LOCK();
+        return 1;
+    }
+
+    while (offset < len) {
+        if ((len - offset) > USB_MAX_TRANS_SIZE) {
+            trans_len = USB_MAX_TRANS_SIZE;
+        } else {
+            trans_len = len - offset;
+        }
+
+        /* data stage */
+        ret = aml_usb_bulk_msg(udev, usb_sndbulkpipe(udev, USB_EP1), (void *)src + offset, trans_len, &actual_length, AML_USB_CONTROL_MSG_TIMEOUT);
+        if (ret) {
+            AML_PRINT_LOG_ERR("Failed to usb_bulk_msg, ret:%d\n", ret);
+            FREE(g_cbw_buf, "cmd stage");
+            USB_END_LOCK();
+            return 1;
+        }
+        AML_PRINT_LOG_INFO("wifi_download actual_length:0x%x\n", actual_length);
+        offset += actual_length;
+    }
+
+    USB_END_LOCK();
+    return 0;
+}
+
+extern unsigned char *offload_code_buffer;
 
 int wifi_fw_download(void)
 {
@@ -638,6 +685,18 @@ int wifi_fw_download(void)
     wifi_dccm_download(kmalloc_buf, len);
 
     FREE(kmalloc_buf, "usb_write");
+
+#ifdef OFFLOAD_RAM_ENABLE
+    src = (unsigned char *)(fw->data + ICCM_RAM_LEN + DCCM_LEN);
+
+    memset(offload_code_buffer, 0, OFFLOAD_PKT_RAM_LEN);
+    memcpy(offload_code_buffer, src, OFFLOAD_PKT_RAM_LEN);
+
+    if (memcmp(offload_code_buffer, src, OFFLOAD_PKT_RAM_LEN)) {
+        AML_PRINT_LOG_ERR("offload_code_buffer err\n");
+    }
+#endif
+
 #elif defined (HAL_SIM_VER)
     AML_PRINT_LOG_INFO("len %d, addr 0x%x\n", len, src);
     len = ICCM_ALL_LEN;
@@ -1419,16 +1478,19 @@ unsigned int aml_aon_read_reg(unsigned int addr)
 }
 
 #endif
-
+#if defined(SDIO_MODE_ON) || defined(SDIO_BUILD_IN)
 extern unsigned char recovery_notify_bt;
 extern unsigned char recovery_done;
+#endif
 void aml_usb_disable_wifi(void)
 {
     AML_PRINT_LOG_INFO("enter\n");
     wifi_usb_access = 0;
 
+#if defined(SDIO_MODE_ON) || defined(SDIO_BUILD_IN)
     recovery_notify_bt = 1;
     recovery_done = 0;
+#endif
 
     /* 1.chip en off, usb disconnect */
 #ifndef UBUNTU_PT_MODE
@@ -1464,7 +1526,9 @@ void aml_usb_enable_wifi(void)
     wifi_usb_access = 1;
     hal_fw_repair();
     usb_stor_control_msg((unsigned long)hal_priv);
+#if defined(SDIO_MODE_ON) || defined(SDIO_BUILD_IN)
     recovery_done = 1;
+#endif
 }
 
 void aml_usb_exit(void)

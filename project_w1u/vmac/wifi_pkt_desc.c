@@ -72,12 +72,14 @@ struct sk_buff *wifi_mac_alloc_skb(struct wifi_mac *wifimac, unsigned int size)
 
     skb = os_skb_alloc(size + 64 + HI_TXDESC_DATAOFFSET);
     if (skb == NULL) {
+        AML_PRINT(AML_LOG_ID_HAL_TX, AML_LOG_LEVEL_DEBUG, "skb alloc failed\n");
         return NULL;
     }
     txinfo = (struct wifi_mac_tx_info *)os_skb_cb(skb);
 
     ptxdesc = wifi_mac_alloc_txdesc(wifimac);
     if (ptxdesc == NULL) {
+        AML_PRINT(AML_LOG_ID_HAL_TX, AML_LOG_LEVEL_DEBUG, "txdesc alloc failed\n");
         os_skb_free(skb);
         return NULL;
     }

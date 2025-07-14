@@ -234,7 +234,7 @@ void hal_tx_desc_init(void)
     control->bit_time = 5461;// = 2^18/48 = 5461.333...
     control->rts_rate = WIFI_11G_24M;
     control->ack_rate = WIFI_11G_24M;
-    control->tx_power = 4;
+    control->tx_power = 5;
 
     control = &our_rate_controls[ WIFI_11G_54M ];
     control->bit_time = 4854;// = 2^18/54 = 4854.518518518...
@@ -735,7 +735,9 @@ static __INLINE unsigned int Hal_TxDescriptor_GetCtsTime(struct hi_agg_tx_desc* 
                             DESC_IS_SHORTGI, DESC_RIFS, DESC_BANDWIDTH); // ack + SIFS
         }
         else {
-                ASSERT( DESC_RATE <= WIFI_11BG_MAX );
+                if (DESC_RATE > WIFI_11BG_MAX) {
+                    AML_PRINT_LOG_ERR("vid:%d DESC_RATE %x,\n", HiTxDesc->vid, DESC_RATE);
+                }
                 if ((DESC_PREMBLETYPE == PREAMBLE_SHORT)||IS_OFMD_RATE(DESC_RATE)) {
                         return ( IS_OFMD_RATE(DESC_RATE) ?  16 :10 )          // SIFS
                                + Hal_TxDescriptor_GetPreamble( DESC_RATE,DESC_PREMBLETYPE ) // data frame
@@ -1002,9 +1004,14 @@ void hal_tx_desc_build(struct hi_agg_tx_desc* HiTxDesc,
         pTxDPape->TxPriv.HiP2pNoaCountNow = HiTxDesc->HiP2pNoaCountNow;
     }
 
- //if frame is broadcast, initialize TxPriv.txstatus to TX_DESCRIPTOR_STATUS_SUCCESS
+    //if frame is broadcast, initialize TxPriv.txstatus to TX_DESCRIPTOR_STATUS_SUCCESS
     if ((pTxDPape->TxPriv.Flag & WIFI_IS_Group) == WIFI_IS_Group) {
         pTxDPape->TxPriv.txstatus = TX_DESCRIPTOR_STATUS_SUCCESS;
+    }
+
+    if ((HiTxDesc->TID == QUEUE_MANAGE) && (bw != SW_CBW20)) {
+        AML_PRINT_LOG_ERR("frame build error in mgmt queue, bw:%d\n", bw);
+        wifi_debug_dump_data(pTxDPape, sizeof(struct hi_tx_desc) + 30, 16);
     }
 }
 

@@ -15,10 +15,6 @@ struct amlw1_hwif_sdio g_w1_hwif_sdio;
 struct amlw1_hif_ops g_w1_hif_ops;
 struct aml_hif_sdio_ops g_hif_sdio_ops;
 
-typedef void (*bt_pm_func)(void);
-bt_pm_func g_bt_suspend_func;
-bt_pm_func g_bt_resume_func;
-
 unsigned char recovery_notify_bt = 0;
 unsigned char recovery_done = 1;
 unsigned char g_sdio_wifi_bt_alive;
@@ -33,6 +29,7 @@ unsigned char  sdio_req_buffer_timeout = 0;
 unsigned char wifi_sdio_shutdown = 0;
 unsigned char wifi_irq_enable = 0;
 unsigned int  shutdown_i = 0;
+unsigned int g_aml_sdio_func7_base = 0xfffe0000;
 #define  I2C_CLK_QTR   0x4
 
 static DEFINE_MUTEX(wifi_bt_sdio_mutex);
@@ -59,6 +56,16 @@ void aml_wifi_sdio_power_unlock(void)
     mutex_unlock(&wifi_sdio_power_mutex);
 }
 
+static DEFINE_MUTEX(aml_sdio_func7_mutex);
+
+void aml_sdio_func7_lock(void)
+{
+    mutex_lock(&aml_sdio_func7_mutex);
+}
+void aml_sdio_func7_unlock(void)
+{
+    mutex_unlock(&aml_sdio_func7_mutex);
+}
 
 unsigned char (*host_wake_req)(void);
 int (*host_suspend_req)(struct device *device);
@@ -830,11 +837,15 @@ void aml_w1_sdio_init_ops(void)
     ops->bt_hi_write_word = aml_w1_bt_hi_write_word;
     ops->bt_hi_read_word = aml_w1_bt_hi_read_word;
     ops->hif_suspend = aml_w1_sdio_suspend;
+    ops->hi_read_mem = aml_sdio_read_mem;
+    ops->hi_write_mem = aml_sdio_write_mem;
 
     ops_for_bt->bt_hi_write_sram = aml_w1_bt_sdio_write_sram;
     ops_for_bt->bt_hi_read_sram = aml_w1_bt_sdio_read_sram;
     ops_for_bt->bt_hi_write_word = aml_w1_bt_hi_write_word;
     ops_for_bt->bt_hi_read_word = aml_w1_bt_hi_read_word;
+    ops_for_bt->hi_self_define_domain_write32 = aml_w1_sdio_write_reg32;
+    ops_for_bt->hi_self_define_domain_read32 = aml_w1_sdio_read_reg32;
 
     //ops->hif_get_sts = hif_get_sts;
     //ops->hif_pt_rx_start = hif_pt_rx_start;
@@ -912,16 +923,19 @@ static void  aml_sdio_remove(struct sdio_func *func)
 
 atomic_t g_suspend_func_cnt;
 unsigned char g_sdio_in_suspend = 0;
+int (*pre_suspend_wifi)(void);
 
 static int aml_sdio_pm_suspend(struct device *device)
 {
     int ret = 0;
 
+    if (g_sdio_in_suspend == 0 && pre_suspend_wifi != NULL && pre_suspend_wifi() != 0) {
+        printk("%s suspend fail\n", __func__);
+        return -1;
+    }
+
     if (cmpxchg(&g_sdio_in_suspend, 0, 1) == 0) {
         atomic_set(&g_suspend_func_cnt, 0);
-        if (g_bt_suspend_func != NULL) {
-            g_bt_suspend_func();
-        }
     }
 
     atomic_inc(&g_suspend_func_cnt);
@@ -946,9 +960,6 @@ static int aml_sdio_pm_resume(struct device *device)
         ret = host_resume_req(device);
 
     if (atomic_dec_and_test(&g_suspend_func_cnt) == 1) {//--g_suspend_func_cnt == 0
-        if (g_bt_resume_func != NULL) {
-            g_bt_resume_func();
-        }
         cmpxchg(&g_sdio_in_suspend, 1, 0);
     }
 
@@ -1336,6 +1347,55 @@ void aml_sdio_shutdown(struct device *device)
     aml_w1_sdio_write_word(RG_AON_A56, aml_w1_sdio_read_word(RG_AON_A56) | BIT(31));
 }
 #endif
+
+void aml_sdio_read_mem(unsigned char *buf, unsigned char *addr, SYS_TYPE len)
+{
+    unsigned int reg_tmp;
+
+    aml_sdio_func7_lock();
+    if (g_aml_sdio_func7_base != ((unsigned int)addr & 0xfffe0000))
+    {
+        reg_tmp = g_w1_hif_ops.hi_read_word(RG_SDIO_IF_MISC_CTRL);
+        if (!(reg_tmp & BIT(23)))
+        {
+            reg_tmp |= BIT(23);
+            g_w1_hif_ops.hi_write_word(RG_SDIO_IF_MISC_CTRL, reg_tmp);
+        }
+        /*config msb 15 bit address in BaseAddr Register*/
+        g_w1_hif_ops.hi_write_reg32(RG_SCFG_FUNC7_BADDR_A, (unsigned int)addr & 0xfffe0000);
+        printk("aml_sdio_read_mem, func_base, old:0x%x, new:0x%x\n", g_aml_sdio_func7_base, (unsigned int)addr & 0xfffe0000);
+        g_aml_sdio_func7_base = (unsigned int)addr & 0xfffe0000;
+    }
+    //printk("aml_sdio_read_mem, buf:0x%s, addr:0x%x, len:0x%x\n", buf, addr, len);
+    aml_w1_sdio_bottom_read(SDIO_FUNC7, (SYS_TYPE)addr & SDIO_ADDR_MASK, buf, len,
+                            (len > 8 ? SDIO_OPMODE_INCREMENT : SDIO_OPMODE_FIXED));
+    aml_sdio_func7_unlock();
+}
+
+void aml_sdio_write_mem(unsigned char *buf, unsigned char *addr, SYS_TYPE len)
+{
+    unsigned int reg_tmp;
+
+    aml_sdio_func7_lock();
+    if (g_aml_sdio_func7_base != ((unsigned int)addr & 0xfffe0000))
+    {
+        reg_tmp = g_w1_hif_ops.hi_read_word(RG_SDIO_IF_MISC_CTRL);
+        if (!(reg_tmp & BIT(23)))
+        {
+            reg_tmp |= BIT(23);
+            g_w1_hif_ops.hi_write_word(RG_SDIO_IF_MISC_CTRL, reg_tmp);
+        }
+        /*config msb 15 bit address in BaseAddr Register*/
+        g_w1_hif_ops.hi_write_reg32(RG_SCFG_FUNC7_BADDR_A, (unsigned int)addr & 0xfffe0000);
+        printk("aml_sdio_write_mem, func_base, old:0x%x, new:0x%x\n", g_aml_sdio_func7_base, (unsigned int)addr & 0xfffe0000);
+        g_aml_sdio_func7_base = (unsigned int)addr & 0xfffe0000;
+    }
+    //printk("aml_sdio_write_mem, buf:0x%x, addr:0x%x, len:0x%x\n", buf, addr, len);
+    aml_w1_sdio_bottom_write(SDIO_FUNC7, (SYS_TYPE)addr & SDIO_ADDR_MASK, buf, len,
+                            (len > 8 ? SDIO_OPMODE_INCREMENT : SDIO_OPMODE_FIXED));
+    aml_sdio_func7_unlock();
+}
+
 static SIMPLE_DEV_PM_OPS(aml_sdio_pm_ops, aml_sdio_pm_suspend,
                      aml_sdio_pm_resume);
 
@@ -1496,8 +1556,6 @@ EXPORT_SYMBOL(aml_priv_to_func);
 #ifdef CHIP_RESET_SUPPORT
 EXPORT_SYMBOL(g_sdio_reset_work);
 #endif
-EXPORT_SYMBOL(g_bt_resume_func);
-EXPORT_SYMBOL(g_bt_suspend_func);
-
+EXPORT_SYMBOL(pre_suspend_wifi);
 
 

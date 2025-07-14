@@ -29,8 +29,8 @@ struct aml_hal_call_backs callback;
 static struct B2B_Tx_Task_Struct b2b_tx_struct;
 
 //Added for B2B test case packet information init
-/////////////////////////////////////////type,burst,ampdu,encry, tkip, tcpip, pkts_num, rate, bw, shortGI,ldpc_enable, channel,pkt_len;
-struct _B2B_Test_Case_Packet gB2BTestCasePacket={1,    0,    0,    0,    0,     0,     1500,   0x04, 0,  0,         1,           6,   1200};
+/////////////////////////////////////////type,burst,ampdu,encry, tkip, tcpip, pkts_num, rate, bw, shortGI,ldpc_enable, channel,pkt_len, mpdu_num;
+struct _B2B_Test_Case_Packet gB2BTestCasePacket={1,    0,    0,    0,    0,     0,     1500,   0x04, 0,  0,         1,           6,   1200, 1};
 struct _B2B_Platform_Conf gB2BPlatformConf={0};
 
 void Queue_Create( struct _Queue* my, void* buffer[], unsigned int size )
@@ -633,7 +633,7 @@ void Task_Schedule(int usrtesttype)
             TrcConfMib.tid = STA2_VMAC1_SEND_TID;
             TrcConfMib.testtype = TYPE_COMMON;
             TrcConfMib.testflag = 0;//WIFI_IS_RTSEN;
-            TrcConfMib.testmpdunum = 1;
+            TrcConfMib.testmpdunum = gB2BTestCasePacket.mpdu_num;
             if( STA1_VMAC0_MULTICAST == 1 )
             {
                TrcConfMib.testflag = WIFI_IS_Group | WIFI_IS_NOACK;
@@ -646,14 +646,14 @@ void Task_Schedule(int usrtesttype)
             TrcConfMib.testflag &= ~WIFI_IS_NOACK;
             TrcConfMib.testflag |= WIFI_IS_BLOCKACK|WIFI_IS_AGGR;
             TrcConfMib.testtype = TYPE_AMPDU;
-            TrcConfMib.testmpdunum = 1;//STA1_VMAC0_AGG_NUM;
+            TrcConfMib.testmpdunum = gB2BTestCasePacket.mpdu_num;//STA1_VMAC0_AGG_NUM;
             up(&b2b_tx_struct.b2b_quite_semph);
             break;
         // 3
         case TYPE_AMSDU:
             TrcConfMib.testflag = 5;//WIFI_IS_RTSEN;
             TrcConfMib.testtype = TYPE_AMSDU;
-            TrcConfMib.testmpdunum = 2;
+            TrcConfMib.testmpdunum = gB2BTestCasePacket.mpdu_num == 1 ? 2 : gB2BTestCasePacket.mpdu_num;
             if(STA1_VMAC0_MULTICAST==1){
                TrcConfMib.testflag=WIFI_IS_Group|WIFI_IS_NOACK;
             }
@@ -671,14 +671,14 @@ void Task_Schedule(int usrtesttype)
             TrcConfMib.testflag |= WIFI_IS_NOACK;
             TrcConfMib.testflag &= ~WIFI_IS_BLOCKACK;
             TrcConfMib.testtype = TYPE_COMMON;
-            TrcConfMib.testmpdunum = 1;
+            TrcConfMib.testmpdunum = gB2BTestCasePacket.mpdu_num;
             up(&b2b_tx_struct.b2b_quite_semph);
             break;
         // 6
         case TYPE_BURST_ACK:
             TrcConfMib.testflag |= WIFI_IS_BURST;
             TrcConfMib.testtype = TYPE_COMMON;
-            TrcConfMib.testmpdunum = 3;
+            TrcConfMib.testmpdunum = gB2BTestCasePacket.mpdu_num < 3 ? 3 : gB2BTestCasePacket.mpdu_num;
             up(&b2b_tx_struct.b2b_quite_semph);
             break;
         // 7
@@ -686,7 +686,7 @@ void Task_Schedule(int usrtesttype)
             TrcConfMib.testflag |= WIFI_IS_BLOCKACK|WIFI_IS_BURST
                                    |WIFI_IS_NOACK|WIFI_IS_AGGR|WIFI_IS_RTSEN;
             TrcConfMib.testtype = TYPE_AMPDU;
-            TrcConfMib.testmpdunum = 3;
+            TrcConfMib.testmpdunum = gB2BTestCasePacket.mpdu_num < 3 ? 3 : gB2BTestCasePacket.mpdu_num;
             up(&b2b_tx_struct.b2b_quite_semph);
             break;
         // 8

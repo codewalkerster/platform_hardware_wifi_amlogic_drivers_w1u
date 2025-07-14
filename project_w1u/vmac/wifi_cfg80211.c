@@ -224,12 +224,13 @@ vm_cfg80211_default_mgmt_stypes[NUM_NL80211_IFTYPES] =
 static void aml_cfg80211_ch_switch_notify(struct net_device *dev,
     struct cfg80211_chan_def *chandef, unsigned int link_id)
 {
-#if ((defined (CONFIG_AMLOGIC_KERNEL_VERSION) && defined (AML_KERNEL_VERSION)) && (\
+#if (!defined (CONFIG_LINUX_UPSTREAM) && \
+    (defined (CONFIG_AMLOGIC_KERNEL_VERSION) && defined (AML_KERNEL_VERSION)) && (\
     (CONFIG_AMLOGIC_KERNEL_VERSION == 13515 && AML_KERNEL_VERSION >= 15)\
     || (CONFIG_AMLOGIC_KERNEL_VERSION == 14515 && AML_KERNEL_VERSION >= 12) ) )\
     || (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0))
     return cfg80211_ch_switch_notify(dev, chandef, link_id, 0);
-#elif defined (CFG80211_SINGLE_NETDEV_MULTI_LINK_SUPPORT)
+#elif (defined (CFG80211_SINGLE_NETDEV_MULTI_LINK_SUPPORT)) || (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 2))
     return cfg80211_ch_switch_notify(dev, chandef, link_id);
 #else
     return cfg80211_ch_switch_notify(dev, chandef);
@@ -239,13 +240,16 @@ static void aml_cfg80211_ch_switch_notify(struct net_device *dev,
 static void aml_cfg80211_ch_switch_started_notify(struct net_device *dev,
     struct cfg80211_chan_def *chandef, unsigned int link_id, u8 count, bool quiet)
 {
-#if ((defined (CONFIG_AMLOGIC_KERNEL_VERSION) && defined (AML_KERNEL_VERSION)) && (\
+#if (!defined (CONFIG_LINUX_UPSTREAM) && \
+    (defined (CONFIG_AMLOGIC_KERNEL_VERSION) && defined (AML_KERNEL_VERSION)) && (\
     (CONFIG_AMLOGIC_KERNEL_VERSION == 13515 && AML_KERNEL_VERSION >= 15)\
     || (CONFIG_AMLOGIC_KERNEL_VERSION == 14515 && AML_KERNEL_VERSION >= 12) ) )\
     || (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0))
     return cfg80211_ch_switch_started_notify(dev, chandef, link_id, count, quiet, 0);
-#elif defined (CFG80211_SINGLE_NETDEV_MULTI_LINK_SUPPORT)
+#elif (defined (CFG80211_SINGLE_NETDEV_MULTI_LINK_SUPPORT)) || (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
     return cfg80211_ch_switch_started_notify(dev, chandef, link_id, count, quiet);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
+    return cfg80211_ch_switch_started_notify(dev, chandef, count, quiet);
 #else
     return cfg80211_ch_switch_started_notify(dev, chandef, count);
 #endif
@@ -570,7 +574,6 @@ cfg80211_informbss_cb(void *arg, const struct wifi_scan_info *se)
     struct wiphy *wiphy = wnet_vif->vm_wdev->wiphy;
     const struct wifi_scan_info *lse = se;
     struct scaninfo_table *st = wifimac->wm_scan->ScanTablePriv;
-    TXTParameter *aml_txt_parameter = NULL;
 
     int ret = 0;
     struct ieee80211_channel *notify_channel;
@@ -624,16 +627,6 @@ cfg80211_informbss_cb(void *arg, const struct wifi_scan_info *se)
         ret = -ENOMEM;
         goto exit;
     }
-
-    aml_txt_parameter = hal_get_txt_parameter();
-
-    if (!aml_txt_parameter)
-    {
-        AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_ERROR, "ERROR NOMEM\n");
-        ret = -ENOMEM;
-        goto exit;
-    }
-
     pbuf = buf;
 #if (CFG80211_VERSION_CODE < KERNEL_VERSION(3,18,0))
     p80211mgmt = (struct wifi_frame *)buf;
@@ -676,8 +669,7 @@ cfg80211_informbss_cb(void *arg, const struct wifi_scan_info *se)
         len += ielen;
     }
 
-    if (lse->SI_country_ie[1] && aml_txt_parameter->country_ie_report)
-    {
+    if (lse->SI_country_ie[1]) {
         ielen = wifi_mac_copy_ie(pbuf, lse->SI_country_ie, SCANINFO_IE_DATA_LENGTH);
         pbuf += ielen;
         len += ielen;
@@ -1010,7 +1002,7 @@ vm_p2p_set_probersp_ie(struct wlan_net_vif *wnet_vif, char *frm, int len)
     }
 #endif //CONFIG_WFD
     wnet_vif->vm_p2p->p2p_app_ie[WIFINET_APPIE_FRAME_PROBE_RESP].need_update = 0;
-    AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "set_probersp %d wps_ie len %d\n", tmp, tmplen);
+    AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "set_probersp wps_ie len %d\n", tmplen);
     return ret;
 }
 
@@ -1594,6 +1586,8 @@ vm_cfg80211_connect_timeout_task(SYS_TYPE net)
     wnet_vif->vm_curchan = WIFINET_CHAN_ERR;
     memset(wnet_vif->vm_des_ssid, 0, IV_SSID_SCAN_AMOUNT*sizeof(struct wifi_mac_ScanSSID));
 
+    disconenct_info_update(wnet_vif,DISCONNECT_TRIGGER_ACTIVE,DISCONNECT_CONNECTFAIL,0);
+
     vm_cfg80211_indicate_disconnect(wnet_vif);
     wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
 
@@ -1653,19 +1647,13 @@ void vm_cfg80211_indicate_disconnect(struct wlan_net_vif *wnet_vif)
     struct wireless_dev *pwdev = wnet_vif->vm_wdev;
     struct vm_wdev_priv *pwdev_priv = wdev_to_priv(pwdev);
     struct wifi_station *sta = wnet_vif->vm_mainsta;
-    struct wifi_mac *wifimac = wnet_vif->vm_wmac;
+    unsigned int status_code = WLAN_STATUS_UNSPECIFIED_FAILURE;
 #if (CFG80211_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
     struct cfg80211_bss *bss = NULL;
 #endif
 
-    AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "<%s>\n", VMAC_DEV_NAME(wnet_vif));
-
-    WIFI_ALPHA_LOCK(wifimac);
-    if (wifimac->wm_alpha_set_forbid & CONNECT_FORBIDDEN) {
-        wifi_mac_run_delayed_country_switch(wnet_vif->vm_wmac);
-        wifimac->wm_alpha_set_forbid &= ~CONNECT_FORBIDDEN;
-    }
-    WIFI_ALPHA_UNLOCK(wifimac);
+    AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "<%s> sta:%p vm_state:%d reason code:%d\n",
+        VMAC_DEV_NAME(wnet_vif), sta, wnet_vif->vm_state, wnet_vif->disconnect_info.wifi_spec_code);
 
     if ((pwdev->iftype != NL80211_IFTYPE_STATION)
 #ifdef CONFIG_P2P
@@ -1687,9 +1675,9 @@ void vm_cfg80211_indicate_disconnect(struct wlan_net_vif *wnet_vif)
         wnet_vif->vm_phase_flags = 0;
     }
 
-    if (sta->sta_wfd_ie && wnet_vif->vm_wmac->is_miracast_connect) {
-        wnet_vif->vm_wmac->is_miracast_connect = 0;
-        AML_PRINT_LOG_INFO("clear is_miracast_connect = %d \n",wnet_vif->vm_wmac->is_miracast_connect);
+    if (sta->miracast_active) {
+        sta->miracast_active = 0;
+        AML_PRINT_LOG_INFO("miracast_active = %d \n",vm_p2p_miracast_active(wnet_vif->vm_wmac));
     }
 
     if (sta->connect_status == CONNECT_DISCONNECTED) {
@@ -1698,6 +1686,10 @@ void vm_cfg80211_indicate_disconnect(struct wlan_net_vif *wnet_vif)
     }
 
     if ((wnet_vif->vm_state > WIFINET_S_SCAN) && (wnet_vif->vm_state < WIFINET_S_CONNECTED)) {
+
+        if (wnet_vif->disconnect_info.wifi_spec_code) {
+            status_code = wnet_vif->disconnect_info.wifi_spec_code;
+        }
 #if (CFG80211_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
 
         bss = cfg80211_get_bss(pwdev->wiphy, NULL, sta->sta_bssid, sta->sta_essid, sta->sta_esslen,
@@ -1708,13 +1700,13 @@ void vm_cfg80211_indicate_disconnect(struct wlan_net_vif *wnet_vif)
 
         cfg80211_connect_bss(wnet_vif->vm_ndev, sta->sta_bssid, bss, NULL, 0, NULL,
 #if CFG80211_VERSION_CODE <= KERNEL_VERSION(4, 12, 0)
-            0, WLAN_STATUS_UNSPECIFIED_FAILURE, GFP_KERNEL);
+            0, status_code, GFP_KERNEL);
 #else
-            0, WLAN_STATUS_UNSPECIFIED_FAILURE, GFP_KERNEL,NL80211_TIMEOUT_UNSPECIFIED);
+            0, status_code, GFP_KERNEL,NL80211_TIMEOUT_UNSPECIFIED);
 #endif
 #else
         cfg80211_connect_result(wnet_vif->vm_ndev, sta->sta_bssid, NULL, 0, NULL, 0,
-            WLAN_STATUS_UNSPECIFIED_FAILURE, GFP_ATOMIC);
+            status_code, GFP_ATOMIC);
 #endif
 
     } else {
@@ -1726,14 +1718,16 @@ void vm_cfg80211_indicate_disconnect(struct wlan_net_vif *wnet_vif)
         #endif
 
         #if CFG80211_VERSION_CODE > KERNEL_VERSION(4,2,0)
-            cfg80211_disconnected(wnet_vif->vm_ndev, 0, NULL, 0, false,  GFP_ATOMIC);
+            cfg80211_disconnected(wnet_vif->vm_ndev, wnet_vif->disconnect_info.wifi_spec_code, NULL, 0, false,  GFP_ATOMIC);
         #else
-            cfg80211_disconnected(wnet_vif->vm_ndev, 0, NULL, 0, GFP_ATOMIC);
+            cfg80211_disconnected(wnet_vif->vm_ndev, wnet_vif->disconnect_info.wifi_spec_code, NULL, 0, GFP_ATOMIC);
         #endif
     }
     if (wnet_vif->vm_recovery_state != WIFINET_RECOVERY_END) {
         wifi_mac_vif_restore_end(wnet_vif);
     }
+
+    wnet_vif->vm_des_channel = WIFINET_CHAN_ERR;
     sta->connect_status = CONNECT_DISCONNECTED;
     os_timer_ex_cancel(&wnet_vif->vm_mgtsend, CANCEL_SLEEP);
     os_timer_ex_cancel(&pwdev_priv->connect_timeout, CANCEL_SLEEP);
@@ -1760,17 +1754,19 @@ void vm_cfg80211_indicate_sta_assoc(const struct wifi_station *sta)
     return;
 }
 void
-vm_cfg80211_indicate_sta_disassoc(const struct wifi_station *sta,
+vm_cfg80211_indicate_sta_disassoc(struct wifi_station *sta,
     unsigned short reason)
 {
     struct wlan_net_vif *wnet_vif = sta->sta_wnet_vif;
     struct net_device *dev = wnet_vif->vm_ndev;
 
-    AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, " <%s> \n",VMAC_DEV_NAME(wnet_vif));
-    if (sta->sta_wfd_ie && wnet_vif->vm_wmac->is_miracast_connect) {
-        wnet_vif->vm_wmac->is_miracast_connect = 0;
-        AML_PRINT_LOG_INFO("clear is_miracast_connect = %d \n",wnet_vif->vm_wmac->is_miracast_connect);
+    AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, " <%s> sta:%p \n",VMAC_DEV_NAME(wnet_vif),sta);
+
+    if (sta->miracast_active) {
+        sta->miracast_active = 0;
+        AML_PRINT_LOG_INFO("miracast_active = %d \n",vm_p2p_miracast_active(wnet_vif->vm_wmac));
     }
+    concurrent_channel_protect_timer_cancel(sta->sta_wnet_vif);
     cfg80211_del_sta(dev, sta->sta_macaddr, GFP_ATOMIC);
     return;
 }
@@ -2004,6 +2000,8 @@ vm_cfg80211_scan(struct wiphy *wiphy, struct cfg80211_scan_request *request)
     struct cfg80211_ssid *ssids = request->ssids;
     int nssids = request->n_ssids;
     struct wifi_mac_ScanSSID lssids[IV_SSID_SCAN_AMOUNT];
+    struct wifi_mac_ScanSSID *pssids = NULL;
+    unsigned int scan_flags = 0;
     int lnssids = 0;
     int lssidlen = 0;
 
@@ -2015,6 +2013,7 @@ vm_cfg80211_scan(struct wiphy *wiphy, struct cfg80211_scan_request *request)
     unsigned long last_time = 0;
     last_time = last_scan_time;
     last_scan_time = jiffies;
+
 
     if (aml_wifi_is_enable_rf_test())
         return 0;
@@ -2043,27 +2042,24 @@ vm_cfg80211_scan(struct wiphy *wiphy, struct cfg80211_scan_request *request)
 #ifdef CONFIG_P2P
     /*in order to p2p handshark protect from station scanning */
     if ((wnet_vif->vm_p2p_support == 0) && wifimac->wm_p2p_connection_protect) {
-        if (time_after(jiffies, wifimac->wm_p2p_connection_protect_period)) {
-            wifimac->wm_p2p_connection_protect = 0;
-            WIFI_ALPHA_LOCK(wifimac);
-            wifi_mac_run_delayed_country_switch(wifimac);
-            WIFI_ALPHA_UNLOCK(wifimac);
-
-        } else {
-            AML_PRINT_LOG_ERR("rejected scan due to p2p negotiation\n");
-            if (wifimac->wm_scan->scan_ssid_count) {
-                OS_SPIN_LOCK(&pwdev_priv->scan_req_lock);
-                if (pwdev_priv->scan_request == NULL) {
-                    pwdev_priv->scan_request = request;
-                }
-                OS_SPIN_UNLOCK(&pwdev_priv->scan_req_lock);
-                wifi_mac_notify_scan_done(wnet_vif);
-                return 0;
-            } else {
-                delay_time_ms = (wifimac->wm_p2p_connection_protect_period - jiffies) * 1000 / HZ + 1;
-                AML_PRINT_LOG_ERR("scan wait protect period end delay %d ms\n", delay_time_ms);
-                msleep(delay_time_ms);
+        if ((wifimac->wm_scan->scan_ssid_count > 0)
+            && (jiffies_to_msecs(jiffies - wifimac->wm_lastscan) < 2000)) {
+            OS_SPIN_LOCK(&pwdev_priv->scan_req_lock);
+            if (pwdev_priv->scan_request == NULL) {
+                pwdev_priv->scan_request = request;
             }
+            OS_SPIN_UNLOCK(&pwdev_priv->scan_req_lock);
+
+            AML_PRINT_LOG_ERR("rejected scan due to p2p negotiation\n");
+
+            wifi_mac_notify_scan_done(wnet_vif);
+            return 0;
+        } else {
+            while (wifimac->wm_p2p_connection_protect) {
+                delay_time_ms += 100;
+                msleep(100);
+            }
+            AML_PRINT_LOG_ERR("delay %dms\n", delay_time_ms);
         }
     }
 
@@ -2073,13 +2069,13 @@ vm_cfg80211_scan(struct wiphy *wiphy, struct cfg80211_scan_request *request)
         WIFI_ALPHA_UNLOCK(wifimac);
         return -EINVAL;
     } else {
-        wifimac->wm_alpha_set_forbid |= SCAN_FORBIDDEN;
+        wifimac->wm_alpha_set_forbid = 1;
     }
     WIFI_ALPHA_UNLOCK(wifimac);
 
-    if ((wifimac->wm_nrunning == 1) && (wifimac->is_miracast_connect == 1) &&
+    if ((wifimac->wm_nrunning == 1) && vm_p2p_miracast_active(wifimac) &&
         (drv_priv->drv_wnet_vif_table[NET80211_P2P_VMAC]->vm_state == WIFINET_S_CONNECTED)) {
-        AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_WARN, "rejected wlan0 scan due to is_miracast_connect\n");
+        AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_WARN, "rejected wlan0 scan due to miracast_active\n");
         return -EINVAL;
     }
 #endif
@@ -2156,7 +2152,7 @@ vm_cfg80211_scan(struct wiphy *wiphy, struct cfg80211_scan_request *request)
     if (wnet_vif->vm_p2p_support)
     {
         vm_p2p_scanstart(wiphy, ndev, request);
-        concurrent_channel_protection(wnet_vif, 1000);
+        concurrent_channel_protect_period_update(wnet_vif, 1000);
     }
 #endif //CONFIG_P2P
     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO,"lnssids %d, lssidlen %d, n_channels:%d\n", lnssids, lssidlen, request->n_channels);
@@ -2171,24 +2167,29 @@ vm_cfg80211_scan(struct wiphy *wiphy, struct cfg80211_scan_request *request)
         wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
     }
 
-    if (lnssids && lssidlen)
-    {
-        vm_scan_user_set_chan(wnet_vif, request);
-        ret_startscan =  wifi_mac_start_scan(wnet_vif, WIFINET_SCANCFG_CHANSET | WIFINET_SCANCFG_ACTIVE
-            | WIFINET_SCANCFG_NOPICK | WIFINET_SCANCFG_USERREQ| WIFINET_SCANCFG_FLUSH, lnssids, lssids);
-    }
-    else
-    {
-        if (wnet_vif->vm_p2p_support) {
-            vm_scan_user_set_chan(wnet_vif, request);
-            ret_startscan =  wifi_mac_start_scan(wnet_vif, WIFINET_SCANCFG_CHANSET | WIFINET_SCANCFG_ACTIVE
-                | WIFINET_SCANCFG_NOPICK | WIFINET_SCANCFG_USERREQ| WIFINET_SCANCFG_FLUSH, lnssids, lssids);
+    scan_flags |= WIFINET_SCANCFG_ACTIVE | WIFINET_SCANCFG_NOPICK | WIFINET_SCANCFG_USERREQ | WIFINET_SCANCFG_FLUSH;
 
+    pssids = lssids;
+    if (lnssids && lssidlen) {
+        scan_flags |= WIFINET_SCANCFG_CHANSET;
+    } else {
+        if (wnet_vif->vm_p2p_support) {
+            scan_flags |= WIFINET_SCANCFG_CHANSET;
+        } else if (IS_REGD_CORE_MGMT() && request->n_channels > 0) {
+            scan_flags |= WIFINET_SCANCFG_CHANSET;
+            lnssids = wnet_vif->vm_des_nssid;
+            pssids = wnet_vif->vm_des_ssid;
         } else {
-            ret_startscan =  wifi_mac_start_scan(wnet_vif, WIFINET_SCANCFG_ACTIVE | WIFINET_SCANCFG_NOPICK
-                | WIFINET_SCANCFG_USERREQ | WIFINET_SCANCFG_FLUSH, wnet_vif->vm_des_nssid, wnet_vif->vm_des_ssid);
+            lnssids = wnet_vif->vm_des_nssid;
+            pssids = wnet_vif->vm_des_ssid;
         }
     }
+
+    if (scan_flags & WIFINET_SCANCFG_CHANSET) {
+        vm_scan_user_set_chan(wnet_vif, request);
+    }
+
+    ret_startscan =  wifi_mac_start_scan(wnet_vif, scan_flags, lnssids, pssids);
 
     if (ret_startscan == 0)
     {
@@ -2255,11 +2256,14 @@ vm_cfg80211_update_wiphy_params(struct wiphy *wiphy)
 
     vm_wdev = wnet_vif->vm_wdev;
     AML_PRINT_LOG_INFO("vm_wdev:0x%p\n", vm_wdev);
-#if CFG80211_VERSION_CODE < KERNEL_VERSION(5,15,0)
+#if (defined (CONFIG_LINUX_UPSTREAM) && \
+    LINUX_VERSION_CODE <= KERNEL_VERSION(5,19,2)) || CFG80211_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
+
     chandef = &vm_wdev->preset_chandef;
 #else
     chandef = &vm_wdev->u.ap.preset_chandef;
 #endif
+
     if (chandef->chan == NULL) {
         AML_PRINT_LOG_ERR("chandef->chan NULL\n");
         return -1;
@@ -2490,7 +2494,8 @@ int softap_get_sta_num(struct wlan_net_vif *wnet_vif)
 
 extern int aml_notify_ip(struct wifi_station *sta, u8 vif_ctx_id, u8 ip_type, u8 *ip_addr);
 
-#if (CFG80211_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
+#if (defined (CONFIG_LINUX_UPSTREAM) && \
+    LINUX_VERSION_CODE <= KERNEL_VERSION(6,1,0)) || CFG80211_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
 static  int vm_cfg80211_add_key(struct wiphy *wiphy, struct net_device *dev, unsigned char key_index,
     bool pairwise, const unsigned char *mac_addr, struct key_params *params)
 #else
@@ -2717,7 +2722,8 @@ vm_cfg80211_set_rekey_data(struct wiphy *wiphy,
 
     return -1;
 }
-#if (CFG80211_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
+#if (defined (CONFIG_LINUX_UPSTREAM) && \
+    LINUX_VERSION_CODE <= KERNEL_VERSION(6,1,0)) || CFG80211_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
 static int vm_cfg80211_del_key(struct wiphy *wiphy, struct net_device *dev,
     unsigned char key_index, bool pairwise, const unsigned char *mac_addr)
 #else
@@ -2803,7 +2809,8 @@ exit:
     return 0;
 }
 
-#if (CFG80211_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
+#if (defined (CONFIG_LINUX_UPSTREAM) && \
+    LINUX_VERSION_CODE <= KERNEL_VERSION(6,1,0)) || CFG80211_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
 static int vm_cfg80211_config_default_key(struct wiphy *wiphy,
     struct net_device *dev,unsigned char key_index, bool unicast, bool multicast)
 #else
@@ -2838,7 +2845,8 @@ static int vm_cfg80211_config_default_key(struct wiphy *wiphy, struct net_device
     return 0;
 }
 
-#if (CFG80211_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
+#if (defined (CONFIG_LINUX_UPSTREAM) && \
+    LINUX_VERSION_CODE <= KERNEL_VERSION(6,1,0)) || CFG80211_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
 static int
 vm_cfg80211_get_key(struct wiphy *wiphy, struct net_device *dev,
     unsigned char key_index, bool pairwise, const unsigned char *mac_addr,
@@ -2912,6 +2920,7 @@ static int vm_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
     struct wlan_net_vif *wnet_vif = wiphy_to_adapter(wiphy);
     struct vm_wdev_priv *pwdev_priv = wdev_to_priv(wnet_vif->vm_wdev);
     struct cfg80211_connect_params *lsme = sme;
+    struct cfg80211_bss *bss = NULL;
 
     int ret = 0;
     unsigned int delay_ms = 0;
@@ -2920,6 +2929,7 @@ static int vm_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
     struct wifi_mac *wifimac = wnet_vif->vm_wmac;
     struct wifi_mac_scan_state *ss = wifimac->wm_scan;
     struct drv_private* drv_priv = wifimac->drv_priv;
+    struct wlan_net_vif *p2p_vmac = drv_priv->drv_wnet_vif_table[NET80211_P2P_VMAC];
 
     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO,"<%s> privacy=%d, key=%p, key_len=%d, key_idx=%d\n",
         dev->name, lsme->privacy, lsme->key, lsme->key_len, lsme->key_idx);
@@ -2964,9 +2974,9 @@ static int vm_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
         }
     }
 
-    if ((wifimac->wm_nrunning == 1) && (wifimac->is_miracast_connect == 1)
+    if ((wifimac->wm_nrunning == 1) && vm_p2p_miracast_active(wifimac)
         && (drv_priv->drv_wnet_vif_table[NET80211_P2P_VMAC]->vm_state == WIFINET_S_CONNECTED)) {
-        AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_ERROR,"rejected wlan0 connect due to is_miracast_connect\n");
+        AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_ERROR,"rejected wlan0 connect due to miracast_active\n");
         return ret;
     }
 
@@ -2981,6 +2991,7 @@ static int vm_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
         AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_WARN,"vm_sate:%d unexpected\n",wnet_vif->vm_state);
         wnet_vif->vm_des_nssid = 0;
         memset(wnet_vif->vm_des_ssid, 0, IV_SSID_SCAN_AMOUNT*sizeof(struct wifi_mac_ScanSSID));
+        disconenct_info_update(wnet_vif,DISCONNECT_TRIGGER_ACTIVE,DISCONNECT_GENERIC,0);
         wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
     }
 
@@ -3001,8 +3012,10 @@ static int vm_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
     }
     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "ssid=%s, len=%zd\n", ssid_sprintf(lsme->ssid, lsme->ssid_len), lsme->ssid_len);
 
+    disconenct_info_update(wnet_vif,DISCONNECT_TRIGGER_RESERVED,DISCONNECT_GENERIC,0);
     memset(wnet_vif->vm_des_ssid, 0, IV_SSID_SCAN_AMOUNT * sizeof(struct wifi_mac_ScanSSID));
     memset(wnet_vif->vm_des_bssid, 0, WIFINET_ADDR_LEN);
+    wnet_vif->vm_des_channel = WIFINET_CHAN_ERR;
     wnet_vif->vm_des_ssid[0].len= lsme->ssid_len;
     memcpy(wnet_vif->vm_des_ssid[0].ssid, lsme->ssid, lsme->ssid_len);
     wnet_vif->vm_des_nssid = 1;
@@ -3012,6 +3025,31 @@ static int vm_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 
     wifimac->wm_lastroaming = jiffies;
     g_auto_gain_base = 0;
+
+    bss = cfg80211_get_bss(wiphy, NULL, sme->bssid,sme->ssid, sme->ssid_len,IEEE80211_BSS_TYPE_ANY,IEEE80211_PRIVACY_ANY);
+
+    if (bss != NULL) {
+        unsigned int htcapie_len = 0;
+        unsigned int htinfoie_len = 0;
+        unsigned int vhtoptie_len = 0;
+        unsigned char *htcapie = NULL;
+        unsigned char *htinfoie = NULL;
+        unsigned char *vhtoptie = NULL;
+        const struct cfg80211_bss_ies *ies = rcu_dereference(bss->ies);
+
+        htcapie = vm_get_ie(ies->data, ies->len, NULL, (unsigned int *)&htcapie_len, WIFINET_ELEMID_HTCAP, 0);
+        htinfoie = vm_get_ie(ies->data, ies->len, NULL, (unsigned int *)&htinfoie_len, WIFINET_ELEMID_HTINFO, 0);
+        vhtoptie = vm_get_ie(ies->data, ies->len, NULL, (unsigned int *)&vhtoptie_len, WIFINET_ELEMID_VHTOP, 0);
+
+        wnet_vif->vm_des_channel = wifi_mac_scan_sta_get_ap_channel(wnet_vif, lsme->channel->hw_value, htinfoie, htcapie, vhtoptie);
+
+        if (wnet_vif->vm_des_channel != WIFINET_CHAN_ERR) {
+            AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO,"pri_chan:%d center_chan:%d bw:%d\n",wnet_vif->vm_des_channel->chan_pri_num,
+                wifi_mac_Mhz2ieee(wnet_vif->vm_des_channel->chan_cfreq1,0), wnet_vif->vm_des_channel->chan_bw);
+        }
+
+        cfg80211_put_bss(wiphy, bss);
+    }
 
     /*if change AP,change roaming_ssid and clean roaming candidate channel*/
     if(!wnet_vif->vm_wmac->wm_scan->roaming_ssid.len
@@ -3223,9 +3261,46 @@ static int vm_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 
     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "connect_timeout=%d ms\n",CFG80211_CONNECT_TIMER_OUT);
 
-    WIFI_ALPHA_LOCK(wifimac);
-    wifimac->wm_alpha_set_forbid |= CONNECT_FORBIDDEN;
-    WIFI_ALPHA_UNLOCK(wifimac);
+    if (IS_APSTA_CONCURRENT(aml_wifi_get_con_mode())
+        && concurrent_check_vmac_is_AP(wifimac)
+        && (wnet_vif->vm_opmode == WIFINET_M_STA)
+        && (p2p_vmac->vm_state == WIFINET_S_CONNECTED)) {
+        struct wifi_channel *switch_chan = NULL;
+        unsigned int pri_channel = 0, center_chan = 0;
+        struct wlan_net_vif *p2p_wnet_vif = drv_priv->drv_wnet_vif_table[NET80211_P2P_VMAC];
+
+        delay_ms = 0;
+        switch_chan = wnet_vif->vm_des_channel;
+
+        if (switch_chan != NULL) {
+            pri_channel = switch_chan->chan_pri_num;
+            if (hal_get_channel_2g_20Mhz_only()
+                && (pri_channel >= 1)
+                && (pri_channel <= 14)
+                && (switch_chan->chan_bw != WIFINET_BWC_WIDTH20)) {
+                switch_chan = wifi_mac_find_chan(wifimac, switch_chan->chan_pri_num, WIFINET_BWC_WIDTH20, switch_chan->chan_pri_num);
+            }
+        }
+
+        channel_switch_announce_trigger(wifimac, switch_chan);
+        while ((wifimac->wm_flags & WIFINET_F_DOTH) && (wifimac->wm_flags & WIFINET_F_CHANSWITCH) && delay_ms < 1000) {
+            msleep(50);
+            delay_ms+=50;
+        }
+        if ((switch_chan != NULL) && (delay_ms >= 1000)
+            && (p2p_wnet_vif->vm_curchan != switch_chan)) {
+            if (p2p_wnet_vif->csa_target.start == 0) {
+                wifimac->wm_flags &= ~WIFINET_F_CHANSWITCH;
+                wifimac->wm_flags &= ~WIFINET_F_DOTH;
+                wifimac->wm_doth_channel = 0;
+                wifimac->wm_doth_tbtt = 0;
+                memset(&(p2p_wnet_vif->csa_target.switch_chan) , 0, sizeof(struct wifi_channel));
+            }
+            center_chan = wifi_mac_Mhz2ieee(switch_chan->chan_cfreq1,0);
+            wifi_mac_set_wnet_vif_channel(p2p_wnet_vif, switch_chan->chan_pri_num, switch_chan->chan_bw, center_chan,0);
+            AML_PRINT(AML_LOG_ID_CONNECT, AML_LOG_LEVEL_INFO,"delay_ms:%d p2p switch channel without channel switch announce\n",delay_ms);
+        }
+    }
 
     OS_SPIN_LOCK_IRQ(&pwdev_priv->connect_req_lock,pwdev_priv->connect_req_lock_flags);
     wnet_vif->vm_mainsta->connect_status = CONNECT_CONNECTING;
@@ -3258,7 +3333,6 @@ vm_cfg80211_disconnect(struct wiphy *wiphy,
     struct wifi_mac *wifimac = wnet_vif->vm_wmac;
     struct drv_private *drv_priv = wifimac->drv_priv;
     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO,"<%s> reason_code=%d\n", dev->name, reason_code);
-    wifimac->wm_disconnect_code = DISCONNECT_SYSTEM;
 
     if (!IS_UP(dev))
     {
@@ -3272,6 +3346,7 @@ vm_cfg80211_disconnect(struct wiphy *wiphy,
         wifi_mac_scan_forbidden(wnet_vif, FORBIDDEN_SCAN_FOR_DISCONNECTING_TIMEOUT, FORBIDDEN_SCAN_FOR_DISCONNECTING);
 
     } else if (wnet_vif->vm_p2p_support) {
+        struct vm_wdev_priv *pwdev_priv = wdev_to_priv(wnet_vif->vm_wdev);
         if (pwdev_priv->connect_request) {
             ret = -EBUSY;
             AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_ERROR,"rev disconnect cmd when connecting\n");
@@ -3301,6 +3376,7 @@ vm_cfg80211_disconnect(struct wiphy *wiphy,
     {
         case WIFINET_M_STA:
             wnet_vif->vm_mainsta->connect_status = CONNECT_DISCONNECTING;
+            disconenct_info_update(wnet_vif,DISCONNECT_TRIGGER_ACTIVE,DISCONNECT_SYSTEM,reason_code);
             AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "sta mode vm_state:%d\n", wnet_vif->vm_state);
 
             if (wnet_vif->vm_state >= WIFINET_S_AUTH) {
@@ -3578,7 +3654,8 @@ legacy_k2dot11_rate_map(unsigned int kernel_rate)
 
 int vm_cfg80211_set_bitrate_mask(struct wiphy *wiphy,
     struct net_device *dev,
-#if CFG80211_VERSION_CODE > KERNEL_VERSION(5,15,0)
+#if (!defined (CONFIG_LINUX_UPSTREAM) && \
+    LINUX_VERSION_CODE > KERNEL_VERSION(5,15,0)) || CFG80211_VERSION_CODE >= KERNEL_VERSION(5,19,2)
     unsigned int link_id,
 #endif
     const unsigned char *peer,
@@ -4051,7 +4128,9 @@ static int _iv_cfg80211_add_set_beacon(struct wiphy *wiphy, struct net_device *d
 #ifdef CONFIG_P2P
     vm_p2p_set_state(p2p, NET80211_P2P_STATE_LISTEN);
 #ifdef CONFIG_CONCURRENT_MODE
-    concurrent_channel_protection(wnet_vif, 3000);
+    if (wnet_vif->vm_state != WIFINET_S_CONNECTED) {
+        concurrent_channel_protect_period_update(wnet_vif, 3000);
+    }
 
     if (wifi_mac_is_others_wnet_vif_running(wnet_vif) == true) {
         main_vmac_chan = wifi_mac_get_main_vmac_channel(wifimac);
@@ -4076,7 +4155,30 @@ static int _iv_cfg80211_add_set_beacon(struct wiphy *wiphy, struct net_device *d
         }
     } else {
         /*no other vmac running, no need set concurrent channel*/
+        struct drv_private *drv_priv = wifimac->drv_priv;
+        struct wlan_net_vif *main_vmac = drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC];
+
         concurrent_set_channel = 0;
+
+        /*in this case station is connecting*/
+        if (main_vmac->vm_des_nssid != 0) {
+            struct wifi_channel *curchan = wnet_vif->vm_curchan;
+
+            pri_chan = curchan->chan_pri_num;
+            center_chan =  wifi_mac_Mhz2ieee(curchan->chan_cfreq1, 0);
+            wnet_vif->vm_bandwidth = curchan->chan_bw;
+
+            if (curchan->chan_pri_num < wifi_mac_Mhz2ieee(curchan->chan_cfreq1, 0)) {
+                wnet_vif->scnd_chn_offset = WIFINET_HTINFO_EXTOFFSET_ABOVE;
+            } else if (curchan->chan_pri_num > wifi_mac_Mhz2ieee(curchan->chan_cfreq1, 0)) {
+                wnet_vif->scnd_chn_offset = WIFINET_HTINFO_EXTOFFSET_BELOW;
+            } else{
+                wnet_vif->scnd_chn_offset = WIFINET_HTINFO_EXTOFFSET_NA;
+            }
+
+            AML_PRINT(AML_LOG_ID_CFG80211,AML_LOG_LEVEL_INFO,"sta connecting channel change not allowed!\n");
+        }
+
     }
 #endif
 #endif  /*#ifdef CONFIG_P2P*/
@@ -4087,12 +4189,11 @@ static int _iv_cfg80211_add_set_beacon(struct wiphy *wiphy, struct net_device *d
             struct wlan_net_vif *main_wnet_vif = wifi_mac_running_main_wnet_vif(wifimac);
             if (main_wnet_vif != NULL) {
                 /*sta connect to 5G ap, softap need update channel/band/mac_mode as sta*/
-                wnet_vif->vm_curchan = main_vmac_chan;
                 wnet_vif->vm_bandwidth = main_vmac_chan->chan_bw;
                 wnet_vif->vm_mac_mode = main_wnet_vif->vm_mac_mode;
                 wnet_vif->vm_mainsta->sta_bssmode = main_wnet_vif->vm_mac_mode;
 
-                if (wnet_vif->vm_curchan->chan_bw >= WIFINET_BWC_WIDTH40) {
+                if (wnet_vif->vm_bandwidth >= WIFINET_BWC_WIDTH40) {
                     wnet_vif->vm_htcap |= WIFINET_HTCAP_SUPPORTCBW40;
                 }
 
@@ -4110,22 +4211,25 @@ static int _iv_cfg80211_add_set_beacon(struct wiphy *wiphy, struct net_device *d
         }
 
         if (wnet_vif->vm_state == WIFINET_S_CONNECTED) {
-            channel_switch_announce_trigger(wifimac, pri_chan, wnet_vif->vm_bandwidth, center_chan);
+            struct wifi_channel *switch_chan = NULL;
+            switch_chan = wifi_mac_find_chan(wifimac, pri_chan, wnet_vif->vm_bandwidth, center_chan);
+            channel_switch_announce_trigger(wifimac,switch_chan);
         } else {
             struct wifi_channel *vmac_chan = wifi_mac_find_chan(wifimac, pri_chan, wnet_vif->vm_bandwidth, center_chan);
             if ((vmac_chan != WIFINET_CHAN_ERR) && vmac_chan != wnet_vif->vm_curchan) {
                 wifi_mac_add_work_task(wifimac, vm_cfg80211_chan_switch_notify_task, NULL, (SYS_TYPE)wifimac, (SYS_TYPE)wnet_vif, 0, (SYS_TYPE)vmac_chan, 0);
             }
             /*find channel info from channel list by primary channel & bandwidth & center channel */
-            if (!wifi_mac_set_wnet_vif_channel(wnet_vif,  pri_chan, wnet_vif->vm_bandwidth, center_chan)) {
+            if (!wifi_mac_set_wnet_vif_channel(wnet_vif,  pri_chan, wnet_vif->vm_bandwidth, center_chan,CHANNEL_CONNECT_FLAG | CHANNEL_RESTORE_FLAG)) {
                 AML_PRINT_LOG_ERR("set channel failed!\n");
                 ret = -EINVAL;
                 goto exit_malloc;
             }
         }
 
-        AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "set ap chan %d -> %d, mac mode %d, band %d\n",
-                wnet_vif->vm_curchan->chan_pri_num, pri_chan, wnet_vif->vm_mac_mode, wnet_vif->vm_bandwidth);
+        AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "set ap chan %d -> %d, mac mode %d, offset %d, vm_bandwidth %d, center_chan:%d\n",
+                wnet_vif->vm_curchan->chan_pri_num, pri_chan, wnet_vif->vm_mac_mode, wnet_vif->scnd_chn_offset,
+                wnet_vif->vm_bandwidth,wifi_mac_Mhz2ieee(wnet_vif->vm_curchan->chan_cfreq1, 0));
     }
 
     {
@@ -4478,7 +4582,8 @@ static int vm_cfg80211_change_beacon(struct wiphy *wiphy,
     return ret;
 }
 
-#if CFG80211_VERSION_CODE <= KERNEL_VERSION(5,15,0)
+#if (defined (CONFIG_LINUX_UPSTREAM) && \
+    LINUX_VERSION_CODE <= KERNEL_VERSION(5,19,2)) || CFG80211_VERSION_CODE < KERNEL_VERSION(5,15,0)
 static int vm_cfg80211_stop_ap(struct wiphy *wiphy, struct net_device *ndev)
 #else
 static int vm_cfg80211_stop_ap(struct wiphy *wiphy, struct net_device *ndev, unsigned int link_id)
@@ -4880,7 +4985,7 @@ vm_cfg80211_remain_on_channel(
     p2p->remain_on_ch_cookie = *cookie ;
 
 #ifdef CONFIG_CONCURRENT_MODE
-    concurrent_channel_protection(wnet_vif, 600);
+    concurrent_channel_protect_period_update(wnet_vif, 600);
 
     if (restore_duration < 2)
     {
@@ -5284,8 +5389,7 @@ static int vm_cfg80211_mgmt_tx_p2p(struct wiphy *wiphy, struct wireless_dev *wde
     target_channel = ieee80211_frequency_to_channel(center_freq);
 
 #ifdef CONFIG_CONCURRENT_MODE
-    concurrent_channel_protection(wnet_vif, 1500);
-    concurrent_channel_restore(target_channel,wnet_vif, 1500);
+    concurrent_channel_protect_timer_start(wnet_vif, 1500);
 #endif
 
     if ((wifimac->wm_curchan != WIFINET_CHAN_ERR)) {
@@ -5523,7 +5627,6 @@ static int vm_cfg80211_mgmt_tx_sta(struct wiphy *wiphy, struct wireless_dev *wde
             if (auth_channel == NULL) {
                 auth_channel = wifi_mac_find_chan(wifimac, target_channel, WIFINET_BWC_WIDTH20, target_channel);
             }
-
         } else {
             auth_channel = wifimac->wm_curchan;
         }
@@ -5650,7 +5753,7 @@ void vm_cfg80211_chan_switch_notify_task(SYS_TYPE param1,SYS_TYPE param2, SYS_TY
         aml_cfg80211_ch_switch_started_notify(ndev, &chandef, 0, wnet_vif->vm_wmac->wm_doth_tbtt, 0);/*#define CSA_BLOCK_TX            1*/
     } else {
         aml_cfg80211_ch_switch_notify(ndev, &chandef, 0);
-        wnet_vif->csa_target.switch_chan = NULL;
+        memset(&(wnet_vif->csa_target.switch_chan) , 0, sizeof(struct wifi_channel));
     }
 
     return ;
@@ -5718,7 +5821,8 @@ vm_cfg80211_set_antenna(struct wiphy *wiphy, unsigned int tx_ant, unsigned int r
 
 static int
 vm_cfg80211_get_channel(struct wiphy *wiphy, struct wireless_dev *wdev,
-#if CFG80211_VERSION_CODE > KERNEL_VERSION(5,15,0)
+#if (!defined (CONFIG_LINUX_UPSTREAM) && \
+    LINUX_VERSION_CODE > KERNEL_VERSION(5,15,0)) || CFG80211_VERSION_CODE >= KERNEL_VERSION(5, 19, 2)
                         unsigned int link_id,
 #endif
                         struct cfg80211_chan_def *chandef)
@@ -5771,7 +5875,8 @@ vm_cfg80211_get_channel(struct wiphy *wiphy, struct wireless_dev *wdev,
     return 0;
 }
 
-#if (CFG80211_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
+#if (defined (CONFIG_LINUX_UPSTREAM) && \
+    LINUX_VERSION_CODE <= KERNEL_VERSION(5,11,0)) || CFG80211_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
 static int
 vm_cfg80211_set_wds_peer(struct wiphy *wiphy, struct net_device *dev,
                         const unsigned char *addr)
@@ -5790,11 +5895,22 @@ vm_cfg80211_set_qos_map(struct wiphy *wiphy,struct net_device *dev,
 }
 
 #ifdef PNO_SUPPORT
+/* Sched scan start/stop will be called outside the suspend state,
+ * but fw can handle them only after download offload fw bin.
+ * So, here just save params to driver and enable/disable them.
+ */
 static int vm_cfg80211_sched_scan_start(struct wiphy *wiphy,
     struct net_device *dev, struct cfg80211_sched_scan_request *request)
 {
     struct wlan_net_vif *wnet_vif = wiphy_to_adapter(wiphy);
-    aml_send_sched_scan_req(wnet_vif, request);
+
+    AML_PRINT_LOG_INFO("\n");
+    /* Save sched scan request param to drv only.
+     * This command shouldn't send to fw before download offload fw bin.
+     * Sched scan request will be sent to fw in cfg80211_suspend.
+     */
+    aml_build_sched_scan_request(wnet_vif, request);
+    AML_PRINT_LOG_INFO("build sched_scan request\n");
 
     return 0;
 }
@@ -5802,7 +5918,11 @@ static int vm_cfg80211_sched_scan_start(struct wiphy *wiphy,
 static int vm_cfg80211_sched_scan_stop(struct wiphy *wiphy, struct net_device *dev, u64 reqid)
 {
     struct wlan_net_vif *wnet_vif = wiphy_to_adapter(wiphy);
-    aml_send_sched_scan_stop(wnet_vif, reqid);
+
+    AML_PRINT_LOG_INFO("\n");
+    // Just disable sched scan params
+    wnet_vif->sched_scan_en = 0;
+    AML_PRINT_LOG_INFO("sched_scan stop\n");
 
     return 0;
 }
@@ -6058,7 +6178,8 @@ static struct cfg80211_ops vm_cfg80211_ops =
     .set_wiphy_params = vm_cfg80211_set_wiphy_params,
     .set_tx_power = vm_cfg80211_set_tx_power,
     .get_tx_power = vm_cfg80211_get_tx_power,
-#if (CFG80211_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
+#if (defined (CONFIG_LINUX_UPSTREAM) && \
+    LINUX_VERSION_CODE <= KERNEL_VERSION(5,11,0)) || CFG80211_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
     .set_wds_peer = vm_cfg80211_set_wds_peer,
 #endif
     .set_bitrate_mask = vm_cfg80211_set_bitrate_mask,
@@ -7159,19 +7280,19 @@ static void vm_cfg80211_preinit_wiphy(struct wlan_net_vif *wnet_vif, struct wiph
 
     wiphy->software_iftypes |= BIT(NL80211_IFTYPE_MONITOR);
 
-#if defined(CONFIG_PM) && (CFG80211_VERSION_CODE >= KERNEL_VERSION(3, 0, 0) && \
-        CFG80211_VERSION_CODE < KERNEL_VERSION(4, 12, 0))
+#if defined(CONFIG_PM) && defined(PNO_SUPPORT)
+#if CFG80211_VERSION_CODE < KERNEL_VERSION(4, 12, 0)
     wiphy->flags |= WIPHY_FLAG_SUPPORTS_SCHED_SCAN;
-#ifdef PNO_SUPPORT
-    wiphy->max_sched_scan_ssids = MAX_PNO_LIST_COUNT;
-#if CFG80211_VERSION_CODE >= KERNEL_VERSION(3, 2, 0)
-    wiphy->max_match_sets = MAX_PNO_LIST_COUNT;
+#else
+    wiphy->max_sched_scan_reqs = 1;
 #endif
-#endif
+    wiphy->max_sched_scan_ssids = SCAN_SSID_MAX;
+    wiphy->max_match_sets = MAX_MATCH_COUNT;
+    wiphy->max_sched_scan_ie_len = 512;
 #endif
 
 #if defined(CONFIG_PM)
-    wiphy->wowlan = &wowlan_stub;
+        wiphy->wowlan = &wowlan_stub;
 #endif
 
     wiphy->flags |= WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL;
@@ -7255,6 +7376,8 @@ int wifi_mac_alloc_wdev(struct wlan_net_vif *wnet_vif, struct device *dev)
     AML_PRINT_LOG_INFO("%p %d wdev->iftype  %d\n",
             wdev->wiphy->addresses,wdev->wiphy->n_addresses,wdev->iftype );
     /*register wireless device. */
+    aml_2g_channels_init(wdev->wiphy->bands[IEEE80211_BAND_2GHZ]->channels);
+    aml_5g_channels_init(wdev->wiphy->bands[IEEE80211_BAND_5GHZ]->channels);
     ret = wiphy_register(wdev->wiphy);
     //aml_2g_channels_init(wdev->wiphy->bands[IEEE80211_BAND_2GHZ]->channels);
     //aml_5g_channels_init(wdev->wiphy->bands[IEEE80211_BAND_5GHZ]->channels);
@@ -7372,12 +7495,11 @@ void vm_cfg80211_down(struct wlan_net_vif *wnet_vif)
 {
     struct wireless_dev *pwdev = wnet_vif->vm_wdev;
     struct vm_wdev_priv *pwdev_priv = wdev_to_priv(pwdev);
-    char *dev_name = aml_wifi_get_vif0_name();
 
     AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "<%s> down\n", wnet_vif->vm_ndev->name);
 
-    if (strncmp(wnet_vif->vm_ndev->name, dev_name, strlen(dev_name)) == 0) {
-        wnet_vif->vm_wmac->wm_disconnect_code = DISCONNECT_NETDEVDOWN;
+    if (wnet_vif->vm_state > WIFINET_S_SCAN) {
+        disconenct_info_update(wnet_vif,DISCONNECT_TRIGGER_ACTIVE,DISCONNECT_NETDEVDOWN,0);
     }
 
     vm_cfg80211_indicate_scan_done(pwdev_priv, true);

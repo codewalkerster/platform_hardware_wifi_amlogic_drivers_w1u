@@ -286,6 +286,9 @@ struct country_chan_adjust {
 #define WIFINET_RATE_VHT_MCS    0xC0
 #define WIFINET_AMPDU_LIMIT_MAX          (32768)// (16 * 1024 - 1)
 
+#define WIFINET_CHECK_IS_ADDBA(_wnet_vif, _sta) ((_wnet_vif->vm_opmode != WIFINET_M_HOSTAP) || ((_wnet_vif->vm_p2p_support) && ((_sta)->sta_wfd_ie != NULL))\
+        || (!(_wnet_vif->vm_p2p_support) && softap_get_sta_num(_wnet_vif) < 2))
+
 struct wifi_mac_rateset
 {
     unsigned char dot11_rate_num;
@@ -401,6 +404,15 @@ enum wifi_mac_recovery_source
 #define WIFINET_F_DOXSECT 0x00000004
 #define WIFINET_F_DOBRS 0x00000008
 
+enum {
+    PNO_SEC_MODE_NONE = 0,
+    PNO_SEC_MODE_OPEN,
+    PNO_SEC_MODE_WEP,
+    PNO_SEC_MODE_WPA,
+    PNO_SEC_MODE_WPA2,
+    PNO_SEC_MODE_MAX
+};
+
 struct wmeParams
 {
     unsigned char wmep_acm;
@@ -446,6 +458,7 @@ struct wifi_mac_beacon_offsets
     unsigned char *bo_rates;
     unsigned char *bo_channel;
     unsigned char *bo_tim;
+    unsigned char *bo_country;
     unsigned char *bo_wme;
     unsigned char *bo_tim_trailer;
     unsigned short bo_tim_len;
@@ -463,6 +476,7 @@ struct wifi_mac_beacon_offsets
     unsigned char *bo_obss_scan;
     unsigned char *bo_extcap;
     unsigned char *bo_ch_sw_wrp;
+    unsigned char *bo_bcn_end;
     unsigned char *bo_vendor_ie[VENDOR_IE_MAX];
     unsigned short bo_chanswitch_trailerlen;
     unsigned short bo_extchanswitch_trailerlen;
@@ -480,6 +494,8 @@ struct wifi_mac_beacon_offsets
 
 #define WIFINET_ADDR_LEN    6
 #define WIFINET_IS_MULTICAST(_a)    (*(_a) & 0x01)
+#define WIFINET_IS_RETEY(_a)     ((_a) & WIFINET_FC1_RETRY)
+
 struct wifi_frame
 {
     unsigned char  i_fc[2];
@@ -669,6 +685,7 @@ struct WIFINET_S_FRAME_ADDR2
     (((_frame)->i_fc[0] & WIFINET_FC0_SUBTYPE_MASK) == WIFINET_FC0_SUBTYPE_DEAUTH))
 
 #define WIFINET_IS_DATA(_wh) ((((struct wifi_frame *)(_wh))->i_fc[0] & WIFINET_FC0_TYPE_MASK) == WIFINET_FC0_TYPE_DATA )
+#define WIFINET_IS_QOSDATA(_wh) (((((struct wifi_frame *)(_wh))->i_fc[0] & WIFINET_FC0_TYPE_MASK) == WIFINET_FC0_TYPE_DATA ) && ((((struct wifi_frame *)(_wh))->i_fc[0] & WIFINET_FC0_SUBTYPE_MASK) == WIFINET_FC0_SUBTYPE_QOS ))
 
 #define WIFINET_IS_MFP_FRAME(_frame) ((((_frame)->i_fc[0] & WIFINET_FC0_TYPE_MASK) == WIFINET_FC0_TYPE_MGT) && \
     ((_frame)->i_fc[1] & WIFINET_FC1_WEP) && ((((_frame)->i_fc[0] & WIFINET_FC0_SUBTYPE_MASK) == WIFINET_FC0_SUBTYPE_DEAUTH) || \

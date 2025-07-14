@@ -93,7 +93,7 @@ void drv_hal_setupratetable(struct drv_rate_table *rt)
 // abg dot11_rate= bit7 + bit6~0: bit7 is a basic rate flag, rate value = 500kbps * (bit6~0)
 struct drv_rate_table amluno_11bgnac_table =
 {
-    30,  /* number of rates */
+    102,  /* number of rates */
     { 0 },
     {
         /*                                                    short            ctrl  */

@@ -701,6 +701,8 @@ minstrel_init_cck_rates(struct minstrel_priv *mp)
 			break;
 		}
 	}
+	AML_PRINT(AML_LOG_ID_RATE_CTR, AML_LOG_LEVEL_INFO, "n_bitrates:%d val:%d %d %d %d\n", sband->n_bitrates + 1,
+		mp->cck_rates[0], mp->cck_rates[1], mp->cck_rates[2], mp->cck_rates[3]);
 }
 
 static void *

@@ -281,6 +281,8 @@ enum aml_iwpriv_subcmd
     AML_IWP_SET_BT_DIGITAL_GAIN_EFUSE = 113,
     AML_IWP_GET_BT_DIGITAL_GAIN_EFUSE = 114,
     AML_IWP_GET_WIFI_PERFORMANCE_INFO = 115,
+    AML_IWP_SET_TX_MPDU_NUM = 116,
+    AML_IWP_GET_NOISE_FLOOR = 117,
 };
 
 extern void dump_spec_regs_val(struct wlan_net_vif *wnet_vif, int reg_domain);

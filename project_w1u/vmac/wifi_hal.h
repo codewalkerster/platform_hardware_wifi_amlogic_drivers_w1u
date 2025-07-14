@@ -13,6 +13,17 @@
 #define AGG_NUM_PRE_USB          0x7
 #define AMPDU_NUM_ONE_TIME_TX    0x2
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)) && !defined (LINUX_PLATFORM)
+#define TX_STS_READ(_sts) (_sts)
+#define TX_STS_SET(_sts1, _sts2) ((_sts1) = (_sts2))
+#define TX_STS_ADD(_sts, _num) (__sync_fetch_and_add(&(_sts),(_num)))
+#else
+#define TX_STS_READ(_sts) (atomic_read(&(_sts)))
+#define TX_STS_SET(_sts1, _sts2) (atomic_set(&(_sts1), (_sts2)))
+#define TX_STS_ADD(_sts, _num) (atomic_add((_num), &(_sts)))
+#endif
+#define TX_STS_ADD1(_sts) (TX_STS_ADD(_sts, 1))
+
 enum irqreturn  hal_irq_top(int irq, void *dev_id);
 #ifdef CONFIG_AML_USE_STATIC_BUF
 enum aml_prealloc_index {
@@ -129,4 +140,5 @@ void hal_get_fwlog(void);
 int hal_calc_block_in_mpdu (int mpdulen);
 unsigned int hal_read_efuse_val(unsigned int efuse_addr);
 unsigned short hal_get_tx_page_total_num(void);
+int hal_download_offload_fw(void);
 #endif

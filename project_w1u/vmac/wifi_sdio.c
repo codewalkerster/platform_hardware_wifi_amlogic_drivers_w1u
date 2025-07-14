@@ -85,7 +85,9 @@ struct sdio_func *aml_priv_to_func(int func_n)
 }
 #endif//HAL_FPGA_VER
 
-
+//0xc5000000-0xc6300000 reserved for secmon
+//0xc6300000-0xc6400000 reserved for ramoops
+#define SECMON_ADDR 0xc5000000
 extern unsigned char set_wifi_bt_sdio_driver_bit(bool is_register, int shift);
 extern void set_usb_bt_power(int is_on);
 extern void set_usb_wifi_power(int is_on);
@@ -96,6 +98,7 @@ extern unsigned char wifi_sdio_access;
 extern unsigned char g_sdio_driver_insmoded;
 extern unsigned char g_sdio_wifi_bt_alive;
 extern unsigned char g_sdio_after_porbe;
+unsigned char g_sg_data[2048] = {0};
 
 
 
@@ -974,7 +977,14 @@ int aml_sdio_scat_req_rw(struct amlw_hif_scatter_req *scat_req)
 
             pkt_offset += sg_data_size; // actually length
 #endif
-
+            if ((pdata < (unsigned char *)SECMON_ADDR) && (pdata + sg_data_size >= (unsigned char *)SECMON_ADDR))
+            {
+                pdata = &g_sg_data;
+                memset(&g_sg_data, 0, sizeof(g_sg_data));
+                memcpy(&g_sg_data, scat_req->scat_list[sgitem_count].packet, packet_len);
+                AML_PRINT_LOG_WRAN("offset: %d: ttl: %d datalen:%d sgitem_count:%d-%d pktlen:%d packet:%p\n",
+                    pkt_offset, ttl_len, sg_data_size, sgitem_count, sg_count, packet_len, scat_req->scat_list[sgitem_count].packet);
+            }
             sg_set_buf(&scat_req->sgentries[sg_count], pdata, sg_data_size);
             sg_count++;
             ttl_len += sg_data_size;
@@ -1594,9 +1604,10 @@ create_thread_error:
     return ret;
 }
 
-
+#if defined(SDIO_MODE_ON) || defined(SDIO_BUILD_IN)
 extern unsigned char recovery_notify_bt;
 extern unsigned char recovery_done;
+#endif
 void aml_sdio_disable_wifi(void)
 {
     unsigned char bt_alive = 0;
@@ -1607,8 +1618,10 @@ void aml_sdio_disable_wifi(void)
                        wifi_sdio_access, chip_en_access, is_chip_reset);
 
     if (is_chip_reset) {
+#if defined(SDIO_MODE_ON) || defined(SDIO_BUILD_IN)
         recovery_notify_bt = 1;
         recovery_done = 0;
+#endif
 
         /*1 remove sdio drvier*/
         bt_alive = (g_sdio_wifi_bt_alive & BIT(0))? 1:0;
@@ -1698,6 +1711,24 @@ void aml_w1_exit(void) {
         b2b_tx_thread_remove();
 
     vm_cfg80211_clear_parent_dev();
+}
+
+int aml_sdio_pm_pre_suspend(void)
+{
+    struct hal_private * hal_priv = hal_get_priv();
+    int cnt = 0;
+
+    while (atomic_read(&hal_priv->drv_suspend_cnt) == 0)
+    {
+        msleep(50);
+        cnt++;
+        if (cnt > 20)
+        {
+            AML_PRINT_LOG_ERR("unable to enter suspend mode\n");
+            return -1;
+        }
+    }
+    return 0;
 }
 
 int aml_sdio_pm_suspend(struct device *device)
@@ -1904,6 +1935,11 @@ static void  aml_sdio_remove(struct sdio_func *func)
     sdio_claim_host(func);
     sdio_disable_func(func);
     sdio_release_host(func);
+}
+
+static int aml_sdio_pm_pre_suspend(void)
+{
+    return 0;
 }
 
 static int aml_sdio_pm_suspend(struct device *device)

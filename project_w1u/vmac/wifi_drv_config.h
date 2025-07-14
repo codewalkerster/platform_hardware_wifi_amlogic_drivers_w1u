@@ -73,10 +73,21 @@
 #define DEFAULT_TXAMPDU_EN              1   //default  support Aggr tx : Legacy & capture mode: AMPDU=0;
 #define DEFAULT_RXAMPDU_EN              1    //default  support Aggr rx : Legacy & capture mode: AMPDU=0;
 
+//Recovery Ability
+enum {
+    RECOVERY_ABL_DISABLE = 0,
+    RECOVERY_ABL_ENABLE = 1,
+    RECOVERY_ABL_ENABLE_REPORT = 2,
+    RECOVERY_ABL_MAX
+};
 #ifdef UBUNTU_PT_MODE
-#define DEFAULT_SUPPORT_RECOVERY        0
+#define DEFAULT_SUPPORT_RECOVERY        RECOVERY_ABL_DISABLE
 #else
-#define DEFAULT_SUPPORT_RECOVERY        1
+#ifdef CHIP_RESET_SUPPORT
+#define DEFAULT_SUPPORT_RECOVERY        RECOVERY_ABL_ENABLE_REPORT
+#else
+#define DEFAULT_SUPPORT_RECOVERY        RECOVERY_ABL_ENABLE
+#endif
 #endif
 
 #define SRAM_16KMODE 0  // 0: normal ; 1: capture

@@ -590,6 +590,10 @@ void wifi_cpu_clk_switch(unsigned int clk_cfg)
 
 #endif
 
+#ifdef OFFLOAD_RAM_ENABLE
+unsigned char *offload_code_buffer = NULL;
+//unsigned char *offload_code_buffer_check;
+#endif
 
 #ifdef ICCM_CHECK
 unsigned char buf_iccm_rd[ICCM_BUFFER_RD_LEN];
@@ -645,10 +649,8 @@ int hal_download_sdio_fw_img(void)
     rg_dpll_a5.data = aml_aon_read_reg(RG_DPLL_A5);
     /*bpll not init*/
     if (rg_dpll_a5.b.ro_wifi_bb_pll_done != 1) {
-        do {
-            bbpll_init();
-        } while(bbpll_start() == 0);
-
+        bbpll_init();
+        bbpll_start();
         AML_PRINT_LOG_INFO("bbpll  init ok!\n");
 
     } else {
@@ -740,19 +742,18 @@ int hal_download_sdio_fw_img(void)
         offset += databyte;
         len -= databyte;
     } while(len > 0);
-#ifdef PNO_SUPPORT
-    if (fw->size >= ICCM_RAM_LEN + DCCM_LEN + EXT_RAM_LEN) {
-        len = fw->size - ICCM_RAM_LEN - DCCM_LEN - SRAM_LEN;
-        if (len > EXT_RAM_LEN) {
-            len = EXT_RAM_LEN;
-        }
-        offset = 0;
-        hif->hif_ops.hi_write_reg32(RG_SCFG_SRAM_FUNC, MAC_REG_BASE);
-        src = (unsigned char *)(fw->data + ICCM_RAM_LEN + DCCM_LEN + SRAM_LEN);
 
-        hif->hif_ops.hi_write_sram(src, (unsigned char*)(SYS_TYPE)(MAC_SRAM_BASE + SRAM_LEN), len);
+#ifdef OFFLOAD_RAM_ENABLE
+    src = (unsigned char *)(fw->data + ICCM_RAM_LEN + DCCM_LEN);
+
+    memset(offload_code_buffer, 0, OFFLOAD_PKT_RAM_LEN);
+    memcpy(offload_code_buffer, src, OFFLOAD_PKT_RAM_LEN);
+
+    if (memcmp(offload_code_buffer, src, OFFLOAD_PKT_RAM_LEN)) {
+        AML_PRINT_LOG_ERR("offload_code_buffer err\n");
     }
 #endif
+
     /* Starting run firmware */
     //set baseaddr to sram
     hif->hif_ops.hi_write_reg32(RG_SCFG_SRAM_FUNC, MAC_REG_BASE);
@@ -831,6 +832,50 @@ int hal_download_sdio_fw_img(void)
     release_firmware(fw);
     return err;
 }
+
+#ifdef OFFLOAD_RAM_ENABLE
+int hal_download_sdio_offload_fw_img(void)
+{
+    int err = 0, len = 0, offset = 0;
+    SYS_TYPE databyte = 0;
+    struct hw_interface *hif = hif_get_hw_interface();
+    len = OFFLOAD_PKT_RAM_LEN;
+
+    offset = 0;
+    do {
+        databyte = (len > MAX_OFFSET) ? MAX_OFFSET : len;
+        hif->hif_ops.hi_write_mem(offload_code_buffer + offset, (unsigned char *)(SYS_TYPE)(MAC_EXTEND_CODE_BASE + offset), databyte);
+        offset += databyte;
+        len -= databyte;
+    } while (len > 0);
+
+    len = OFFLOAD_PKT_RAM_LEN;
+    offset = 0;
+
+#ifdef OFFLOAD_BUFFER_CHECK
+    memset(offload_code_buffer_check, 0, len);
+
+    do {
+        databyte = (len > MAX_OFFSET) ? SRAM_MAX_LEN : len;
+        hif->hif_ops.hi_read_mem(offload_code_buffer_check + offset, (unsigned char*)(SYS_TYPE)(MAC_EXTEND_CODE_BASE + offset), databyte);
+        offset += databyte;
+        len -= databyte;
+    } while (len > 0);
+
+    if (memcmp(offload_code_buffer_check, offload_code_buffer , OFFLOAD_PKT_RAM_LEN)) {
+        AML_PRINT_LOG_ERR("offload PKT RAM check error!!!!\n");
+        err = 3;
+        return err;
+    } else {
+        AML_PRINT_LOG_INFO("offload fw check succss!\n");
+    }
+#endif
+
+    AML_PRINT_LOG_INFO("offload fw download succss!\n");
+
+    return err;
+}
+#endif
 #endif
 
 #ifdef CONFIG_USB
@@ -872,6 +917,18 @@ int hal_download_usb_fw_img(void)
 
     return 0;
 }
+
+#ifdef OFFLOAD_RAM_ENABLE
+int hal_download_usb_offload_fw_img(void)
+{
+    int len;
+    len = OFFLOAD_PKT_RAM_LEN;
+
+    wifi_fw_bin_sections_download(MAC_EXTEND_CODE_BASE, offload_code_buffer, len);
+
+    return 0;
+}
+#endif
 #endif
 
 #if defined (HAL_FPGA_VER)
@@ -888,6 +945,8 @@ static char * vmac0 = "wlan0";
 static char * vmac1 = "p2p0";
 static unsigned int con_mode = ((1 << WIFINET_M_STA) | (1 << WIFINET_M_P2P_DEV));
 static int en_rf_test = 0;
+static int pwr_limit = 0;
+
 static int cali_proofing = INVALID_PARAM_VALUE; /*the val is -1 use rf txt data otherwise use module param data*/
 
 static char * plt_ver = NULL;
@@ -1090,6 +1149,12 @@ unsigned int aml_wifi_is_enable_rf_test(void)
     return en_rf_test;
 }
 
+int aml_wifi_is_enable_pwr_limit(void)
+{
+    return pwr_limit;
+}
+
+
 extern unsigned char wifi_in_insmod;
 extern unsigned char wifi_in_rmmod;
 extern unsigned char aml_bus_type;
@@ -1266,10 +1331,40 @@ void drv_reset_ops_init(void)
 }
 #endif
 
+#ifdef OFFLOAD_RAM_ENABLE
+
+int offload_buffer_prealloc(void)
+{
+    if (offload_code_buffer == NULL) {
+        offload_code_buffer = (unsigned char *)ZMALLOC(OFFLOAD_PKT_RAM_LEN, "offload_buffer", GFP_DMA | GFP_ATOMIC);
+        if (offload_code_buffer == NULL) {
+            AML_PRINT_LOG_ERR("offload buffer malloc fail\n");
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void offload_buffer_free(void)
+{
+    if (offload_code_buffer != NULL) {
+        FREE(offload_code_buffer, "offload_buffer");
+        offload_code_buffer = NULL;
+    }
+}
+
+#endif
+
 static int aml_insmod(void)
 {
 #ifdef CHIP_RESET_SUPPORT
     drv_reset_ops_init();
+#endif
+#ifdef OFFLOAD_RAM_ENABLE
+    if (offload_buffer_prealloc()) {
+        AML_PRINT_LOG_ERR("offload buffer malloc fail\n");
+        return -1;
+    }
 #endif
     return _aml_insmod();
 }
@@ -1280,6 +1375,9 @@ static void aml_rmmod(void)
     memset(&g_drv_reset_ops, 0x00, sizeof(struct drv_reset_ops));
 #endif
     _aml_rmmod();
+#ifdef OFFLOAD_RAM_ENABLE
+    offload_buffer_free();
+#endif
 }
 
 MODULE_LICENSE("GPL");
@@ -1294,6 +1392,7 @@ module_param(con_mode, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 module_param(plt_ver, charp, S_IRUGO);
 module_param(sdblksize, int, S_IRUGO);
 module_param(en_rf_test, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+module_param(pwr_limit, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 module_param(cali_proofing, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
 
@@ -1314,9 +1413,6 @@ MODULE_PARM_DESC(country_code,"A string variable to describe country code");
 
 module_param(bus_type, charp,S_IRUSR | S_IRGRP | S_IROTH);
 MODULE_PARM_DESC(bus_type,"A string variable to adjust sdio or usb bus interface");
-
-module_param(regdom_scheme, ushort, S_IRUGO);
-MODULE_PARM_DESC(regdom_scheme, "A uint8 variable to adjust which scheme of regdom w1u use.");
 
 #endif
 

@@ -328,6 +328,7 @@ struct drv_config
     unsigned char cfg_mac_mode;
     unsigned char cfg_band;
     unsigned char cfg_recovery;
+    unsigned char cfg_adaptive_mode;
 };
 
 /* Reset flag */
@@ -421,6 +422,8 @@ struct driver_ops
     void        (*set_protmode)(struct drv_private *, enum prot_mode mode);
     void        (*set_cfg_txpowlimit)(struct drv_private *, unsigned short cfg_txpowlimit);
     void        (*set_macaddr)(struct drv_private *, unsigned char wnet_vif_id, unsigned char *macaddr);
+    void        (*set_halopmode)(struct drv_private *, unsigned char wnet_vif_id, enum hal_op_mode opmode);
+    void        (*set_dhcp)(struct drv_private *, unsigned char wnet_vif_id, unsigned int ip);
 
     void        (*key_delete)(struct drv_private *, unsigned char wnet_vif_id, unsigned short key_index, int staid, unsigned char group);
     int          (*key_set)(struct drv_private *, unsigned char wnet_vif_id, unsigned short key_index, struct hal_key_val *hk,

@@ -19,6 +19,29 @@
 #include "wifi_pkt_desc.h"
 #include "wifi_mac_action.h"
 
+#define CCA_THRD_DEFAULT 0x002d8328
+
+#ifndef CONFIG_ROKU
+#define CCA_THRD_CE_FCC 0x002c42c4
+#else
+#define CCA_THRD_CE_FCC 0x002d82d8
+#endif
+
+#define CCA_AC_MODE 2
+
+enum {
+    WIFINET_REGDOM_PENDING_F_SCAN_BIT,
+    WIFINET_REGDOM_PENDING_F_P2P_CON_BIT,
+    WIFINET_REGDOM_PENDING_F_CSA_BIT,
+    WIFINET_REGDOM_PENDING_F_MAX
+};
+
+#define WIFINET_REGDOM_PENDING_F_SCAN (BIT(WIFINET_REGDOM_PENDING_F_SCAN_BIT))
+#define WIFINET_REGDOM_PENDING_F_P2P_CON (BIT(WIFINET_REGDOM_PENDING_F_P2P_CON_BIT))
+#define WIFINET_REGDOM_PENDING_F_CSA (BIT(WIFINET_REGDOM_PENDING_F_CSA_BIT))
+#define WIFINET_REGDOM_PENDING_F_MASK (BIT(WIFINET_REGDOM_PENDING_F_MAX) - 1)
+
+
 #define VM_WIFI_CONNECT_STATE(s )       (((s)== WIFINET_S_CONNECTING)||\
             ((s)== WIFINET_S_AUTH)||\
             ((s)== WIFINET_S_ASSOC))
@@ -162,6 +185,13 @@ wifi_mac_wmm_chanparams(struct wlan_net_vif *wnet_vif,
 #define ETHERTYPE_ARP    0x0806
 #endif
 
+#define DHCP_CLIENT_PORT  68
+#define DHCP_SERVER_PORT  67
+#define MDNS_PORT  5353
+#define DNS_SERVER_PORT        53
+#define UDP_HEADER_LEN 8
+#define IP_HEADER_LEN  20
+
 #define IP_PRI_SHIFT        5
 #define VLAN_PRI_SHIFT  13
 #define VLAN_PRI_MASK   7
@@ -199,6 +229,7 @@ wifi_mac_wmm_chanparams(struct wlan_net_vif *wnet_vif,
 #define UNCONNECT_MIN_GIAN_THRESHOLD 80
 #define OVERLAPPING_24G_GIAN_THRESHOLD 5
 #define OVERLAPPING_5G_GIAN_THRESHOLD 10
+#define DEFAULT_NUM_OF_PROBE_REQ 2
 
 struct  ether_header
 {
@@ -281,7 +312,7 @@ void wifi_mac_vmac_detach(struct wlan_net_vif *wnet_vif);
 void wifi_mac_scan_end(struct wifi_mac *wifimac);
 void wifi_mac_connect_start(struct wifi_mac *wifimac);
 void wifi_mac_connect_end(struct wifi_mac *wifimac);
-void wifi_mac_scan_set_gain(struct wifi_mac *wifimac, unsigned char rssi);
+void wifi_mac_scan_set_gain(struct wifi_mac *wifimac, unsigned char rssi, unsigned char flag);
 void wifi_mac_set_channel_rssi(struct wifi_mac *wifimac, unsigned char rssi);
 int wifi_mac_is_in_noisy_environment(struct wifi_mac *wifimac);
 int wifi_mac_is_in_clear_environment(struct wifi_mac *wifimac);
@@ -376,6 +407,7 @@ int vm_wlan_net_vif_setup_forchvif(struct wifi_mac *wifimac, struct wlan_net_vif
 int vm_wlan_net_vif_register(struct wlan_net_vif *, char *);
 void vm_wlan_net_vif_detach(struct wlan_net_vif * );
 void vm_wlan_net_vif_unregister(struct wlan_net_vif *);
+unsigned char is_need_update_country_ie(struct wifi_mac *wifimac);
 void wifi_mac_build_country_ie(struct wlan_net_vif *);
 int wifi_mac_get_new_vmac_id(struct wifi_mac *wifimac);
 void wifi_mac_delt_vmac_id(struct wifi_mac *wifimac,int vid);
@@ -414,7 +446,12 @@ extern void cca_thrd_cfg_change_task(SYS_TYPE param1, SYS_TYPE param2,SYS_TYPE p
 void wifi_mac_set_fwlog_ex(SYS_TYPE param1,SYS_TYPE param2,
     SYS_TYPE param3,SYS_TYPE param4,SYS_TYPE param5);
 void wifi_mac_get_repair_level(void);
-void wifi_mac_run_delayed_country_switch(struct wifi_mac * wifimac);
+void wifi_mac_set_pending_country_switch(struct wifi_mac *wifimac, unsigned int src);
+void wifi_mac_set_pending_country_switch_nonlock(struct wifi_mac *wifimac, unsigned int src);
+void wifi_mac_run_delayed_country_switch(struct wifi_mac * wifimac, unsigned int src);
 void wifi_mac_show_per_info(void);
+
+extern void disconenct_info_update(struct wlan_net_vif *wnet_vif,enum DisconnctionTrigger trigger,
+                            enum DisconnectionReasonCode disconnect_resason, unsigned char wifi_spec_code);
 int wifi_mac_cal_noise(int rssi,unsigned int snr);
 #endif

@@ -48,7 +48,8 @@ enum tx_frame_flag
     TX_MGMT_DEAUTH = 11,
     TX_MGMT_DISASSOC = 12,
     TX_MGMT_ASSOC_RESP = 13,
-    TX_MGMT_DPP_STATUS = 14,
+    TX_MGMT_CSA_ACTION = 14,
+    TX_MGMT_DPP_STATUS = 15,
 };
 
 struct wifi_mac_pkt_info
@@ -62,7 +63,8 @@ struct wifi_mac_pkt_info
         b_arp:1,
         b_tcp_saved_flag:1,
         b_tcp_free:1,
-        b_icmp:1;
+        b_icmp:1,
+        b_rtsp:1;
 
     unsigned char eat_count;
     unsigned short tcp_src_port;

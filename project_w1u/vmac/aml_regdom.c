@@ -5,7 +5,7 @@
 #include "wifi_cmd_func.h"
 #include "wifi_mac_chan.h"
 
-unsigned char regdom_scheme = REGDOM_CORE_MGMT;
+unsigned char regdom_scheme = DEFAULT_REGDOM_SCHEME;
 
 static const struct ieee80211_regdomain regdom_global = {
     .n_reg_rules = 7,
@@ -206,6 +206,7 @@ int aml_resolution_chan_info(struct wiphy *wiphy, int *chan_cnt, struct wifi_cha
                 if (chan->flags & IEEE80211_CHAN_RADAR) {
                     chan_list[*chan_cnt].chan_flags |= WIFINET_CHAN_DFS;
                 }
+                chan_list[*chan_cnt].chan_maxpower = chan->max_power;
                 /*AML_PRINT_LOG_INFO("CHANNEL %d BW %d CFREQ %d FLAGS 0x%x",
                     chan_list[*chan_cnt].chan_pri_num, chan_list[*chan_cnt].chan_bw, chan_list[*chan_cnt].chan_cfreq1, chan_list[*chan_cnt].chan_flags);*/
                 (*chan_cnt) ++;
@@ -340,6 +341,8 @@ void aml_apply_country(struct wiphy *wiphy, unsigned char* alpha2, unsigned char
     //const struct ieee80211_regdomain *regdom = NULL;
     unsigned char country[3] = {'\0'};//Driver country code
     unsigned char copy_alpha2[3] = {'\0'};
+    unsigned char cc_ex = 0xff;
+
     int ret = 0;
 
     aml_regdom_alpha2str(alpha2, country);
@@ -360,34 +363,46 @@ void aml_apply_country(struct wiphy *wiphy, unsigned char* alpha2, unsigned char
         memset(wifimac->wm_new_channels, 0x00, sizeof(wifimac->wm_new_channels));
         ret = aml_resolution_chan_info(wiphy, &(wifimac->wm_new_nchans), wifimac->wm_new_channels);
         WIFI_NEW_CHANNEL_UNLOCK(wifimac);
+    } else {
+        cc_ex = find_country_code(country);
+        if (cc_ex == 0xff) {
+            AML_PRINT_LOG_ERR("Unrecognized country code\n");
+            WIFI_ALPHA_UNLOCK(wifimac);
+            return;
+        }
+        WIFI_NEW_CHANNEL_LOCK(wifimac);
+        wifi_mac_new_chan_setup(wifimac, cc_ex);
+        WIFI_NEW_CHANNEL_UNLOCK(wifimac);
     }
 
     wifimac->wm_alpha_target[0] = country[0];
     wifimac->wm_alpha_target[1] = country[1];
     wifimac->wm_alpha_target[2] = '\0';
 
-    if (wifimac->wm_alpha_set_forbid) {
-        wifimac->wm_alpha_pending = 1;
-        AML_PRINT_LOG_INFO("country switch forbidden, save pending country [%s]\n", country);
-        WIFI_ALPHA_UNLOCK(wifimac);
-        return;
-    } else {
+    if (!wifi_mac_update_regdom_need_pending(wifimac)) {
         wifimac->wm_alpha_set_in_progress = 1;
+        wifi_mac_set_country_regdom(country);
     }
-    WIFI_ALPHA_UNLOCK(wifimac);
 
-    wifi_mac_set_country_regdom(country);
+    WIFI_ALPHA_UNLOCK(wifimac);
 }
 
 static void aml_reg_notifier(struct wiphy *wiphy,
                struct regulatory_request *request)
 {
+    unsigned int delay_ms = 0;
     struct wlan_net_vif *wnet_vif = wiphy_to_adapter(wiphy);
+    struct wifi_mac *wifimac = wnet_vif->vm_wmac;
     unsigned char source_code[5][10] = {"core", "user", "driver", "countryie"};
     unsigned char custom = IS_REGD_CUST_BYDB();
 
     if (!request)
         return;
+
+    while ((wifimac->wm_flags & WIFINET_F_DOTH) && (wifimac->wm_flags & WIFINET_F_CHANSWITCH) && delay_ms < 1000) {
+        msleep(50);
+        delay_ms+=50;
+    }
 
     AML_PRINT_LOG_INFO("vid[%d] regdom set by %s: country <%s> \n", wnet_vif->wnet_vif_id, source_code[request->initiator], request->alpha2);
 
@@ -423,11 +438,8 @@ void aml_regd_init(struct wiphy *wiphy)
     struct wlan_net_vif *wnet_vif = wiphy_to_adapter(wiphy);
     char* alpha2 = NULL;
 
-    if (wnet_vif->wnet_vif_id != NET80211_MAIN_VMAC) {
-        return;
-    }
-
     if (regdom_scheme >= REGDOM_SCHEME_MAX) {
+        AML_PRINT_LOG_ERR("invalid regdom_scheme [%d]\n", regdom_scheme);
         regdom_scheme = REGDOM_CUST_DRVDEF;
     }
 

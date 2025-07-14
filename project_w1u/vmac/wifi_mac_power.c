@@ -792,6 +792,7 @@ int wifi_mac_buffer_txq_send(struct sk_buff_head *txqueue)
     struct wifi_station *sta;
     struct wifi_mac *wifimac;
     unsigned int qlen_real = 0;
+    unsigned int detect_cnt = 0;
 
     WIFINET_SAVEQ_LOCK(txqueue);
     qlen_real = WIFINET_SAVEQ_QLEN(txqueue);
@@ -803,6 +804,10 @@ int wifi_mac_buffer_txq_send(struct sk_buff_head *txqueue)
 
     WIFINET_SAVEQ_LOCK(txqueue);
     skb_queue_walk_safe(txqueue,skb,tmp) {
+        if (detect_cnt++ == 2000) {
+            detect_cnt = 0;
+            AML_PRINT_LOG_ERR("qlen:%d ptr:%x\n", qlen_real, tmp);
+        }
         sta = os_skb_get_nsta(skb);
         if (!sta_find_in_sta_tbl(sta)) {
             AML_PRINT_LOG_INFO("not find sta: %p free skb\n",sta);
@@ -1743,6 +1748,9 @@ int wifi_mac_pwrsave_wow_suspend(SYS_TYPE param1,
     struct wifi_mac *wifimac = wnet_vif->vm_wmac;
     int listen_interval = 0, connect = 0;
     unsigned int filter = 0, cnt = 0;
+#ifdef OFFLOAD_RAM_ENABLE
+    unsigned int timeout = 0;
+#endif
 
     AML_PRINT_LOG_INFO("suspend_mode:%s, wow:0x%x\n", suspend_mode_trace[wifimac->wm_suspend_mode], wow);
     WIFINET_PWRSAVE_MUTEX_LOCK(wnet_vif);
@@ -1786,6 +1794,20 @@ int wifi_mac_pwrsave_wow_suspend(SYS_TYPE param1,
         return -EINVAL;
         #endif
     }
+
+#ifdef OFFLOAD_RAM_ENABLE
+    //if (aml_bus_type == AML_BUS_TYPE_USB)
+    {
+        while (timeout < HAL_TX_EMPTY_TIMEOUT) {
+            if (hal_tx_empty()) {
+               hal_download_offload_fw();
+               break;
+            }
+            msleep(10);
+            timeout += 10;
+        }
+    }
+#endif
 
     list_for_each_entry_safe(wnet_vif_tmp, wnet_vif_next, &wifimac->wm_wnet_vifs, vm_next)
     {
@@ -1837,11 +1859,12 @@ int wifi_mac_pwrsave_wow_suspend(SYS_TYPE param1,
 
         /* pno offload start only wlan0 support */
 #ifdef PNO_SUPPORT
-        aml_send_sched_scan_req(wnet_vif, NULL);
         if (wow && wow->nd_config) {
-         aml_send_sched_scan_req(wnet_vif, wow->nd_config);
-         //aml_send_sched_scan_req(wnet_vif, NULL);
+            aml_build_sched_scan_request(wnet_vif, wow->nd_config);
+        }
 
+        if (wnet_vif->sched_scan_en) {
+            aml_send_sched_scan_req(wnet_vif);
         }
 #endif
         wifimac->drv_priv->drv_ops.drv_set_suspend(wifimac->drv_priv, wnet_vif->wnet_vif_id, ENABLE,
@@ -1932,11 +1955,7 @@ void wifi_mac_pwrsave_wow_resume(SYS_TYPE param1,
             netif_wake_queue(wnet_vif->vm_ndev);
             return ;
         }
-        /* stop PNO only wlan0 support*/
-#ifdef PNO_SUPPORT
-        if (wifimac->sched_scan)
-            aml_send_sched_scan_stop(wnet_vif, 0);
-#endif
+
         wifimac->drv_priv->drv_ops.drv_set_suspend(wifimac->drv_priv, wnet_vif->wnet_vif_id, DISABLE,
             WIFI_SUSPEND_STATE_NONE, 0);
 

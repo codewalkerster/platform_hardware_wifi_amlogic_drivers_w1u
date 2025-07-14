@@ -27,6 +27,8 @@ EXPORT_SYMBOL(g_drv_reset_ops);
 unsigned int aml_bus_type;
 struct aml_bus_state_detect bus_state_detect = {0};
 unsigned char g_chip_function_ctrl;
+unsigned char aml_wifi_detect_bt_status = 0;
+int coex_flag;
 
 EXPORT_SYMBOL(bus_type);
 EXPORT_SYMBOL(aml_bus_type);
@@ -34,6 +36,8 @@ extern int aml_usb_insmod(void);
 extern int aml_usb_rmmod(void);
 EXPORT_SYMBOL(bus_state_detect);
 EXPORT_SYMBOL(g_chip_function_ctrl);
+EXPORT_SYMBOL(aml_wifi_detect_bt_status);
+EXPORT_SYMBOL(coex_flag);
 
 #ifdef NOT_AMLOGIC_PLATFORM
 
@@ -48,7 +52,7 @@ EXPORT_SYMBOL(g_chip_function_ctrl);
 #define DHD_SKB_4PAGE_BUF_NUM   1
 
 #define FW_VERBOSE_RING_SIZE            (256 * 1024)
-#define DHD_PREALLOC_MEMDUMP_RAM_SIZE       (1290 * 1024)
+#define DHD_PREALLOC_MEMDUMP_RAM_SIZE       (450 * 1024)
 #define NAN_EVENT_RING_SIZE     (64 * 1024)
 #define WLAN_SKB_1_2PAGE_BUF_NUM ((DHD_SKB_1PAGE_BUF_NUM) + \
         (DHD_SKB_2PAGE_BUF_NUM))
@@ -104,29 +108,26 @@ int aml_init_wlan_mem(void)
     unsigned long size = 0;
     PRINT("%s\n", AML_STATIC_VERSION_STR);
 
-    wlan_static_dhd_memdump_ram_buf = kmalloc(DHD_PREALLOC_MEMDUMP_RAM_SIZE, GFP_KERNEL);
-    if (!wlan_static_dhd_memdump_ram_buf)
-         goto err_mem_alloc;
+    wlan_static_dhd_memdump_ram_buf = kzalloc(DHD_PREALLOC_MEMDUMP_RAM_SIZE, GFP_KERNEL);
+    if (!wlan_static_dhd_memdump_ram_buf) {
+        wlan_static_dhd_memdump_ram_buf = kzalloc(DHD_PREALLOC_MEMDUMP_RAM_SIZE,
+                                                  GFP_KERNEL | __GFP_NOFAIL);
+    }
     size += DHD_PREALLOC_MEMDUMP_RAM_SIZE;
     PRINT("sectoin %d, size=%d\n",
         DHD_PREALLOC_MEMDUMP_RAM, DHD_PREALLOC_MEMDUMP_RAM_SIZE);
 
-    wlan_static_fw_verbose_ring_buf = kmalloc(FW_VERBOSE_RING_SIZE, GFP_KERNEL);
-    if (!wlan_static_fw_verbose_ring_buf)
-        goto err_mem_alloc;
+    wlan_static_fw_verbose_ring_buf = kzalloc(FW_VERBOSE_RING_SIZE, GFP_KERNEL);
+    if (!wlan_static_fw_verbose_ring_buf) {
+         wlan_static_fw_verbose_ring_buf = kzalloc(FW_VERBOSE_RING_SIZE,
+                                                  GFP_KERNEL | __GFP_NOFAIL);
+    }
     size += FW_VERBOSE_RING_SIZE;
     PRINT("sectoin %d, size=%d\n",
         DHD_PREALLOC_FW_VERBOSE_RING, FW_VERBOSE_RING_SIZE);
 
     PRINT("prealloc ok: %ld(%ldK)\n", size, size / 1024);
     return 0;
-
-err_mem_alloc:
-    kfree(wlan_static_dhd_memdump_ram_buf);
-    kfree(wlan_static_fw_verbose_ring_buf);
-    PRINT("Failed to mem_alloc for WLAN\n");
-
-    return -ENOMEM;
 }
 EXPORT_SYMBOL(aml_init_wlan_mem);
 

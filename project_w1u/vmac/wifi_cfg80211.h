@@ -376,7 +376,7 @@ int vm_p2p_set_p2p_ps(struct net_device *dev, char* buf, int len);
 int translate_to_dbm(int rssi);
 struct device *vm_cfg80211_get_parent_dev(void);
 void vm_cfg80211_indicate_sta_assoc(const struct wifi_station *sta);
-void vm_cfg80211_indicate_sta_disassoc(const struct wifi_station *sta, unsigned short reason);
+void vm_cfg80211_indicate_sta_disassoc(struct wifi_station *sta, unsigned short reason);
 int vm_cfg80211_send_mgmt(struct wlan_net_vif *wnet_vif,const unsigned char * buf,int len);
 
 int netdev_setcsum( struct net_device *dev,int data);

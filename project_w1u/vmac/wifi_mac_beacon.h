@@ -27,4 +27,5 @@ void wifi_mac_process_beacon_miss_ex(SYS_TYPE arg);
 int wifi_mac_set_beacon_miss_ex(struct wlan_net_vif *wnet_vif, unsigned char enable, int period);
 void wifi_mac_set_beacon_miss(SYS_TYPE param1,             SYS_TYPE param2,SYS_TYPE param3, SYS_TYPE param4,SYS_TYPE param5);
 void wifi_mac_set_vsdb(SYS_TYPE param1,         SYS_TYPE param2,SYS_TYPE param3, SYS_TYPE param4,SYS_TYPE param5);
+void wifi_mac_set_vsdb_task(struct wifi_mac *wifimac, struct wlan_net_vif *wnet_vif, enum VsdbState state);
 

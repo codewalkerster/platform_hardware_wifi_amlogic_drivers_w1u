@@ -1,25 +1,24 @@
-ifeq ($(ARCH),)
-ARCH ?= arm64
-CROSS_COMPILE ?= aarch64-linux-gnu-
-else ifeq ($(ARCH),arm)
-SYSTEM_TYPE = SYSTEM32
-CROSS_COMPILE ?= arm-linux-gnueabihf-
-EXTRA_CFLAGS += -DSYSTEM32
-else ifeq ($(ARCH),arm64)
-SYSTEM_TYPE = SYSTEM64
-CROSS_COMPILE ?= aarch64-linux-gnu-
-EXTRA_CFLAGS += -DSYSTEM64
-endif
+#ifeq ($(ARCH),)
+#ARCH ?= arm64
+#CROSS_COMPILE ?= aarch64-linux-gnu-
+#else ifeq ($(ARCH),arm)
+#SYSTEM_TYPE = SYSTEM32
+#CROSS_COMPILE ?= arm-linux-gnueabihf-
+#EXTRA_CFLAGS += -DSYSTEM32
+#else ifeq ($(ARCH),arm64)
+#SYSTEM_TYPE = SYSTEM64
+#CROSS_COMPILE ?= aarch64-linux-gnu-
+#EXTRA_CFLAGS += -DSYSTEM64
+#endif
 
+ARCH ?= x86_64
+CROSS_COMPILE ?= x86_64-linux-gnu-
 
 ifneq ($(ROKU_PROJECT),)
 CONFIG_ROKU=y
 CONFIG_CFG80211=y
 CONFIG_LINUX_PLATFORM=y
 EXTRA_CFLAGS += -DCONFIG_ROKU
-ifneq ($(ROKU_TV_PROJECT),)
-PLATFORM_NO_SDIO=y
-endif
 
 -include $(BACKPORTS_VERSIONS)
 ifneq ($(BACKPORTED_KERNEL_VERSION),)
@@ -38,8 +37,8 @@ EXTRA_CFLAGS += -DCPTCFG_KERNEL_NAME=\"$(BACKPORTED_KERNEL_NAME)\"
 EXTRA_CFLAGS += -DBACKPORTED_KERNEL_NAME=\"$(BACKPORTED_KERNEL_NAME)\"
 EXTRA_CFLAGS += -DBACKPORTS_VERSION=\"$(BACKPORTS_VERSION)\"
 EXTRA_CFLAGS += -DBACKPORTED_KERNEL_VERSION=\"$(BACKPORTED_KERNEL_VERSION)\"
-#EXTRA_CFLAGS += -Wno-error=missing-attributes
-#EXTRA_CFLAGS += -Wno-error=stringop-truncation
+EXTRA_CFLAGS += -Wno-error=missing-attributes
+EXTRA_CFLAGS += -Wno-error=stringop-truncation
 EXTRA_CFLAGS += -Wno-error=unused-variable
 endif
 
@@ -70,8 +69,12 @@ KERNELDIR ?= $(SRCTOP)/out/target/product/txhd_t920l_r341/obj/KERNEL_OBJ
 EXTRA_CFLAGS += -DSYSTEM64
 endif
 
-#CC        = $(CROSS_COMPILE)gcc
-#STRIP     = $(CROSS_COMPILE)strip
+KERNELDIR=/usr/lib/modules/$(shell uname -r)/build
+PWD=$(shell pwd)
+EXTRA_CFLAGS += -DSYSTEM64
+
+CC        = $(CROSS_COMPILE)gcc
+STRIP     = $(CROSS_COMPILE)strip
 
 M ?= $(shell pwd)
 ifneq ($(KERNEL_SRC),)
@@ -101,9 +104,9 @@ CONFIG_MAC_SUPPORT=y
 CONFIG_WIFI_CAPTURE=y
 CONFIG_80211_W=y
 CONFIG_WPA3=y
-CONFIG_PNO=y
 ifneq ($(ROKU_PROJECT),)
 CONFIG_CHIP_RESET=y
+CONFIG_WPA3=n
 endif
 TARGET = w1u
 
@@ -124,12 +127,10 @@ EXTRA_CFLAGS += -DPROJECT_W1
 EXTRA_CFLAGS += -DINTER_BEACON
 EXTRA_CFLAGS += -DSRAM_CONCURRENT
 EXTRA_CFLAGS += -DCTS_VERIFIER_GAS
-EXTRA_CFLAGS += -DRX_PN_CHECK
+#EXTRA_CFLAGS += -DRX_PN_CHECK
 #EXTRA_CFLAGS += -DCONFIG_COMPAT
 EXTRA_CFLAGS += -DCONFIG_AML_USE_STATIC_BUF
-ifeq ($(PLATFORM_NO_SDIO),)
 EXTRA_CFLAGS += -DSDIO_BUILD_IN
-endif
 EXTRA_CFLAGS += -DSU_BF
 EXTRA_CFLAGS += -DMU_BF
 EXTRA_CFLAGS += -DUSB_BUILD_IN
@@ -140,16 +141,10 @@ EXTRA_CFLAGS += -DFW_RF_CALIBRATION
 EXTRA_CFLAGS += -DHOST
 EXTRA_CFLAGS += -DDYNAMIC_BW
 EXTRA_CFLAGS += -DWFA_P2P_TEST
-ifeq ($(PLATFORM_NO_SDIO),)
 EXTRA_CFLAGS += -DSDIO_MODE_ON
-endif
-#EXTRA_CFLAGS += -DAML_CHANLIST_ADJUST
-#ifneq ($(ROKU_PROJECT),)
+EXTRA_CFLAGS += -DUBUNTU_PT_MODE
+ifneq ($(ROKU_PROJECT),)
 EXTRA_CFLAGS += -DNOT_AMLOGIC_PLATFORM
-#endif
-
-ifneq ($(LINUX_UPSTREAM),)
-EXTRA_CFLAGS += -DCONFIG_LINUX_UPSTREAM
 endif
 
 ifeq ($(CONFIG_80211_W),y)
@@ -168,8 +163,9 @@ EXTRA_CFLAGS += -DCONFIG_GXL
 EXTRA_CFLAGS += -DCONFIG_HAS_WAKELOCK
 #EXTRA_CFLAGS += -DCONFIG_RTC_ENABLE
 #EXTRA_CFLAGS += -DCONFIG_GPIO_RESET
-EXTRA_CFLAGS += -DUSE_GPIO_IRQ
-#EXTRA_CFLAGS += -DUSE_SDIO_IRQ
+#EXTRA_CFLAGS += -DUSE_GPIO_IRQ
+EXTRA_CFLAGS += -DUSE_SDIO_IRQ
+EXTRA_CFLAGS += -DNOT_AMLOGIC_PLATFORM
 endif
 
 ifneq ($(KERNELRELEASE),)
@@ -178,9 +174,7 @@ obj-m += w1u_comm.o
 w1u_comm-objs:=\
         aml_bus/aml_interface.o\
         aml_bus/usb_common.o
-ifeq ($(PLATFORM_NO_SDIO),)
 w1u_comm-objs += aml_bus/w1_sdio.o
-endif
 
 ifeq ($(CLANG_VERSION), r487747)
 EXTRA_CFLAGS += -Wno-unused-but-set-variable
@@ -191,15 +185,7 @@ endif
 #obj-m += w1u_usb.o
 #w1u_usb-objs += usb_interface/usb_common.o
 
-ifneq ($(ROKU_TV_PROJECT),)
-obj-m += aml_bt.o
-aml_bt-objs += bt/roku_usb_bt_driver/amlbt.o
-aml_bt-objs += bt/roku_usb_bt_driver/debug_dev.o
-aml_bt-objs += bt/roku_usb_bt_driver/w1u_usb_bt.o
-aml_bt-objs += bt/roku_usb_bt_driver/common.o
-aml_bt-objs += bt/roku_usb_bt_driver/rc_list.o
-aml_bt-objs += bt/roku_usb_bt_driver/w2l_usb_bt.o
-endif
+EXTRA_CFLAGS +=-g
 
 obj-m += $(TARGET).o
 DISCARD :=
@@ -207,9 +193,6 @@ SRC_FILE := $(wildcard $(CUR_DIR)/*.c $(CUR_DIR)/rf_t9026/*.c $(CUR_DIR)/crypto/
 TARGET_FILE = $(subst $(CUR_DIR)/,, $(SRC_FILE:%.c=%.o))
 
 ifneq ($(CONFIG_SDIO),)
-ifneq ($(PLATFORM_NO_SDIO),)
-DISCARD += wifi_sdio.o
-endif
 EXTRA_CFLAGS += -DCONFIG_SDIO_IF
 EXTRA_CFLAGS += -DFPGA
 #EXTRA_CFLAGS += -DCONFIG_GPIO_WAKEUP
@@ -226,21 +209,12 @@ EXTRA_CFLAGS += -DWITH_RF
 EXTRA_CFLAGS += -DRF_T9026
 endif
 
-ifeq ($(CONFIG_PNO),y)
-EXTRA_CFLAGS += -DOFFLOAD_RAM_ENABLE
-EXTRA_CFLAGS += -DPNO_SUPPORT
-endif
-
 ifeq ($(CONFIG_MAC_SUPPORT),y)
 EXTRA_CFLAGS += -DCONFIG_MAC_SUPPORT
 ifeq ($(CONFIG_ROKU),y)
 EXTRA_CFLAGS += -DWIFIMAC_PATH=\"/tmp/wifimac.txt\"
-else ifeq ($(CONFIG_BUILDROOT),y)
-EXTRA_CFLAGS += -DWIFIMAC_PATH=\"/etc/wifi/wifimac.txt\"
-EXTRA_CFLAGS += -DLINUX_PLATFORM
-CONFIG_CFG80211=y
 else
-EXTRA_CFLAGS += -DWIFIMAC_PATH=\"/data/vendor/wifi/wifimac.txt\"
+EXTRA_CFLAGS += -DWIFIMAC_PATH=\"/usr/lib/firmware/wifimac.txt\"
 endif
 endif
 
@@ -271,18 +245,13 @@ endif
 endif	#CONFIG_AML_CFG80211
 endif 	#CONFIG_CFG80211
 
-ifeq ($(CONFIG_USB_CLOSE),)
-EXTRA_CFLAGS += -DCONFIG_USB
-endif
-
-
 TARGET_LIST := $(filter-out $(DISCARD), $(TARGET_FILE))
 $(TARGET)-objs = $(TARGET_LIST)
 
 else
 
 modules:
-	perl ./create_version_file.pl
+#	perl ./create_version_file.pl
 	@echo "UNO_GXL_SUB_P200=$(UNO_GXL_SUB_P200)"
 	@echo "PROJECT = $(PROJ_NAME)"
 	@echo "UNOENV=$(UNOENV) MAC_VER=$(MAC_VER)"
@@ -312,10 +281,7 @@ clean:
 	rm -rf ./aml_bus/*.o ./aml_bus/.*.cmd ./aml_bus/.*.o.d ./aml_bus/*.o.symversions
 	rm -rf ./linux/*.o ./linux/.*.cmd ./linux/.*.o.d ./linux/*.o.symversions
 	rm -rf ./crypto/*.o ./crypto/.*.cmd
-ifneq ($(ROKU_TV_PROJECT),)
-	rm -rf ./bt/*.o ./bt/.*.cmd ./bt/.*.o.d
-endif
-	rm -rf ./print_version.c
+#	rm -rf ./print_version.c
 
 depend .depend dep:
 	$(CC) $(EXTRA_CFLAGS) -M *.c > .depend

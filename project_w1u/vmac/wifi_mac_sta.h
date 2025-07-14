@@ -39,6 +39,9 @@
 #define ENABLE  1
 #define DISABLE  0
 
+#define SNR_MAX_SAVE_DATA 30
+#define RSSI_MAX_SAVE_DATA 10
+
 struct wifi_mac_Rsnparms
 {
     unsigned char rsn_mcastcipher;
@@ -155,6 +158,14 @@ struct wifi_sta_statistic
     unsigned int ns_psq_drops;
 };
 
+struct station_pkt_stats
+{
+    unsigned long   rx_packets;
+    unsigned long   tx_packets;
+    unsigned long   rx_errors;
+    unsigned long   tx_errors;
+};
+
 struct wifi_station
 {
     struct wlan_net_vif *sta_wnet_vif;
@@ -249,10 +260,22 @@ struct wifi_station
     int32_t sta_avg_bcn_rssi;    // dbm
     int32_t sta_avg_rssi;
     int32_t sta_avg_data_rssi;
-    int32_t sta_avg_snr;
+    int ignore_data_rssi_num;
+    int ignore_bcn_rssi_num;
+    int sta_bcn_rssi[RSSI_MAX_SAVE_DATA];
+    int sta_data_rssi[RSSI_MAX_SAVE_DATA];
+
+    int sta_avg_snr;
+    int sta_avg_bcn_snr;
+    int sta_avg_data_snr;
+    int ignore_data_snr_num;
+    int ignore_bcn_snr_num;
+    int sta_bcn_snr[SNR_MAX_SAVE_DATA];
+    int sta_data_snr[SNR_MAX_SAVE_DATA];
     unsigned int sta_last_txrate;  //kbps
-    unsigned char last_txrate_bw;
     unsigned int sta_last_rxrate;  //kbps
+    unsigned char last_txrate_bw;
+    unsigned char sta_txrate_code;
     unsigned char sta_rxrate_index;
     unsigned char last_rxrate_bw;
     unsigned char last_rxrate_gi;
@@ -309,7 +332,8 @@ struct wifi_station
     unsigned char sta_p2p_dev_cap;
     unsigned short sta_p2p_config_methods;
     #ifdef CONFIG_WFD
-        unsigned char *sta_wfd_ie;
+    unsigned char *sta_wfd_ie;
+    unsigned char miracast_active;
     #endif/* CONFIG_WFD */
     /* roku platform indicate connect must include roku ie */
         unsigned char *sta_roku_ie;
@@ -328,7 +352,7 @@ struct wifi_station
     unsigned long sta_bcn_num_connected;
     unsigned long sta_bcn_start_connected;
     struct os_timer_ext csa_timer;
-
+    struct station_pkt_stats sta_pkt_stats;
 };
 
 #define WDS_AGING_TIME 600

@@ -9,6 +9,7 @@
 #include "wifi_mac_concurrent.h"
 #include "wifi_iwpriv_cmd.h"
 #include "wifi_hal_cmd.h"
+#include "version.h"
 
 static struct proc_dir_entry *g_proc;
 #define AML_PARENT_NAME "wlan"
@@ -23,6 +24,7 @@ static struct proc_dir_entry *g_proc;
 #define AML_SCANPARAM_NAME "scan_param"
 #define AML_DRVRESET_NAME "drv_reset"
 #define AML_WOW_WAKE_REASON "wow_reason"
+#define AML_POWERTABLE_NAME "power_table"
 #define DRV_PRINT_OFFT 23
 #define CFG_BWINFO "Sta5gBw"
 #define CFG_TXLIMIT "TxRetryLimit"
@@ -45,6 +47,7 @@ static struct proc_dir_entry *g_proc;
 #define PROBE_SSID_NUM_WACH_SCAN 2
 #define SCAN_DURATION_STR "scan_duration"
 #define DBG_INFO_BUF_LEN 2048
+#define RVERSION_LEN 40
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0))
 #define aml_proc_ops proc_ops
@@ -282,7 +285,6 @@ static ssize_t cfgWrite(struct file *filp, char __user *buf, size_t count,
     return count;
 }
 
-unsigned char drv_version[50] = {"v1.0.1_20210327-b"};
 static ssize_t driverRead(struct file *filp, char __user *buf, size_t count,
     loff_t *f_pos)
 {
@@ -303,7 +305,7 @@ static ssize_t driverRead(struct file *filp, char __user *buf, size_t count,
 
     out = tmp_buf;
     out_dfs = dfs_channel;
-    out += sprintf(out, "drv_version:%s\n", drv_version);
+    out += scnprintf(out, RVERSION_LEN, "drv_version:%s\n", DRIVERVERSION);
     out += sprintf(out, "country:%s\n", wifimac->wm_country.iso);
     for (i = 0; i < wifimac->wm_nchans; i++) {
         if ((LEN_DRV_BUFF - strlen(tmp_buf)) < LEN_DRV_MAX_CHANINFO) {
@@ -491,12 +493,42 @@ static ssize_t countryWrite(struct file *file, const char __user *buffer,
     return count;
 }
 
+void disconenct_info_update(struct wlan_net_vif *wnet_vif,
+                            enum DisconnctionTrigger trigger,
+                            enum DisconnectionReasonCode disconnect_resason,
+                            unsigned char wifi_spec_code)
+{
+
+    struct disconnect_info *info = NULL;
+
+    if (wnet_vif == NULL) {
+        AML_PRINT(AML_LOG_ID_LOG,AML_LOG_LEVEL_ERROR," NULL vif\n");
+        return;
+    }
+
+    info = &wnet_vif->disconnect_info;
+
+    info->trigger = trigger;
+    info->disconnect_reason = disconnect_resason;
+    info->wifi_spec_code = wifi_spec_code;
+    info->time = ktime_to_ms(ktime_get_boottime());
+
+    AML_PRINT(AML_LOG_ID_LOG,AML_LOG_LEVEL_DEBUG, " time:%lu trigger:%d reason:%d spec code:%d\n",
+            info->time,trigger,disconnect_resason,wifi_spec_code);
+}
+
 static ssize_t disconnectRead(struct file *filp, char __user *buf, size_t count,
     loff_t *f_pos)
 {
     unsigned int len;
     unsigned char *out;
     struct wifi_mac *wifimac;
+    struct wlan_net_vif *wnet_vif = g_wnet_vif0;
+
+    if (wnet_vif == NULL) {
+        AML_PRINT(AML_LOG_ID_LOG,AML_LOG_LEVEL_ERROR," NULL vif\n");
+        return  -EFAULT;
+    }
 
     if (*f_pos > 0)
         return 0;
@@ -505,7 +537,10 @@ static ssize_t disconnectRead(struct file *filp, char __user *buf, size_t count,
 
     memset(g_aucprocbuf, 0, MAX_BUF_LENGTH);
     out = g_aucprocbuf;
-    out += sprintf(out, "Disconnect reason code:%d\n", wifimac->wm_disconnect_code);
+    out += sprintf(out, "Trigger:%d\n", wnet_vif->disconnect_info.trigger);
+    out += sprintf(out, "Disconnect time:%lu\n", wnet_vif->disconnect_info.time);
+    out += sprintf(out, "Disconnect reason:%d\n", wnet_vif->disconnect_info.disconnect_reason);
+    out += sprintf(out, "Disconnect spec code:%d\n", wnet_vif->disconnect_info.wifi_spec_code);
     len = strlen(g_aucprocbuf);
 
     if (copy_to_user(buf, g_aucprocbuf, len)) {
@@ -650,7 +685,7 @@ static ssize_t scanparamRead(struct file *filp, char __user *buf, size_t count, 
     out += sprintf(out, "backop_ms\t\t\t%d\n", BACKOP_MS);
     out += sprintf(out, "scan_cnt_max\t\t\t%d\n", SCAN_CNT_MAX);
     out += sprintf(out, "scan_num_each_ch\t\t%d\n", SCAN_NUM_EACH_CH);
-    out += sprintf(out, "probe_num_each_scan\t\t%d\n", PROBE_NUM_EACH_SCAN);
+    out += sprintf(out, "probe_num_each_scan\t\t%d\n", wifimac->scan_num_of_probe_req);
     out += sprintf(out, "probe_ssid_num_each_scan\t%d\n", PROBE_SSID_NUM_WACH_SCAN);
     len = strlen(g_aucprocbuf);
 
@@ -697,7 +732,7 @@ static ssize_t scanparamWrite(struct file *filp, char __user *buf, size_t count,
     unsigned int len, param_len = 0;
     unsigned char error = 1;
 
-    unsigned char cmd_list[2][30] = {SCAN_DURATION_STR, ""};
+    unsigned char cmd_list[3][30] = {SCAN_DURATION_STR, "probe_num",""};
 
     unsigned int idx = 0;
     unsigned int duration = 0;
@@ -745,8 +780,19 @@ static ssize_t scanparamWrite(struct file *filp, char __user *buf, size_t count,
                     }
                 }
                 break;
+            case 1:
+                if ((*(pbuf + 1) >= '0') && (*(pbuf + 1) <= '9')) {
+                    error = 0;
+                    wifimac->scan_num_of_probe_req = *(pbuf + 1) - '0';
+                    AML_PRINT_LOG_INFO("set probe request num to %d\n",wifimac->scan_num_of_probe_req);
+                } else {
+                    AML_PRINT_LOG_WRAN("Error Param: %s\n", param);
+                }
+
+                break;
 
             default:
+                AML_PRINT_LOG_WRAN("Error Param\n");
                 break;
         }
     } while (0);
@@ -759,7 +805,9 @@ static ssize_t scanparamWrite(struct file *filp, char __user *buf, size_t count,
 }
 
 #ifdef CHIP_RESET_SUPPORT
+#if defined(SDIO_MODE_ON) || defined(SDIO_BUILD_IN)
 extern struct work_struct g_sdio_reset_work;
+#endif
 static ssize_t drvResetWrite(struct file *filp, char __user *buf, size_t count,
     loff_t *f_pos)
 {
@@ -788,12 +836,55 @@ static ssize_t drvResetWrite(struct file *filp, char __user *buf, size_t count,
         AML_PRINT_LOG_INFO("reset should set to [1] before power down\n");
         return count;
     }
-
+#if defined(SDIO_MODE_ON) || defined(SDIO_BUILD_IN)
     schedule_work(&g_sdio_reset_work);
-
+#endif
     return count;
 }
 #endif
+
+static ssize_t powerTableRead(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
+{
+    unsigned int len = 0;
+    unsigned char *out;
+
+    struct hal_private *hal_priv = hal_get_priv();
+    unsigned char band_bw_idx = 0, power_idx = 0;
+    unsigned char band_bw[5][10] = {"wf2g_20M", "wf2g_40M", "wf5g_20M", "wf5g_40M", "wf5g_80M"};
+    unsigned char band_bw_limit = sizeof(hal_priv->power_table) / sizeof(hal_priv->power_table[0]);
+    unsigned char power_limit = sizeof(hal_priv->power_table[0]) / sizeof(hal_priv->power_table[0][0]);
+    unsigned char sep = '\0';
+
+    unsigned char tmp_buffer[LEN_DRV_BUFF] = {'\0'};
+
+    if (*f_pos > 0)
+        return 0;
+
+    out = tmp_buffer;
+    for (band_bw_idx = 0; band_bw_idx < band_bw_limit; band_bw_idx ++) {
+        out += sprintf(out, "%s:", band_bw[band_bw_idx]);
+        for (power_idx = 0; power_idx < power_limit; power_idx ++) {
+            if (power_idx < power_limit - 1) {
+                sep = ',';
+            } else {
+                sep = '\n';
+            }
+            out += sprintf(out, "0x%x%c", hal_priv->power_table[band_bw_idx][power_idx], sep);
+        }
+    }
+    len = strlen(tmp_buffer);
+
+    ASSERT(len <= LEN_DRV_BUFF);
+
+    if (copy_to_user(buf, tmp_buffer, len)) {
+        AML_PRINT_LOG_ERR("copy to user failed\n");
+        return -EFAULT;
+    }
+    *f_pos += len;
+
+    return len;
+
+}
 
 
 const struct aml_proc_hdl drv_proc_hdls[] = {
@@ -808,6 +899,7 @@ const struct aml_proc_hdl drv_proc_hdls[] = {
 #ifdef CHIP_RESET_SUPPORT
     AML_PROC_HDL_SSEQ(AML_DRVRESET_NAME, NULL, drvResetWrite),
 #endif
+    AML_PROC_HDL_SSEQ(AML_POWERTABLE_NAME, powerTableRead, NULL),
 };
 
 static int aml_drv_proc_open(struct inode *inode, struct file *file)
@@ -1003,6 +1095,19 @@ static const struct aml_proc_ops drvreset_ops = {
 };
 #endif
 
+static const struct aml_proc_ops powertable_ops = {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0))
+            .proc_open = aml_drv_proc_open,
+            .proc_read= powerTableRead,
+            .proc_lseek = seq_lseek,
+            .proc_release = aml_drv_proc_release,
+#else
+            .owner = THIS_MODULE,
+            .open = aml_drv_proc_open,
+            .read = powerTableRead,
+#endif
+};
+
 int32_t RemoveProcEntry(void)
 {
     remove_proc_entry(AML_CFG_NAME, g_proc);
@@ -1017,6 +1122,7 @@ int32_t RemoveProcEntry(void)
 #ifdef CHIP_RESET_SUPPORT
     remove_proc_entry(AML_DRVRESET_NAME, g_proc);
 #endif
+    remove_proc_entry(AML_POWERTABLE_NAME, g_proc);
     return 0;
 }
 
@@ -1115,6 +1221,12 @@ int32_t CreateProcEntry(void)
         return -1;
     }
 #endif
+
+    aml_proc = proc_create(AML_POWERTABLE_NAME, 0664, g_proc, &powertable_ops);
+    if (aml_proc == NULL) {
+        AML_PRINT_LOG_ERR("Unable to create /proc entry power_table\n\r");
+        return -1;
+    }
     return 0;
 }
 

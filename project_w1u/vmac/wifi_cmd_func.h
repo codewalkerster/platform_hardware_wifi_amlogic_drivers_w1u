@@ -86,6 +86,7 @@ extern int aml_set_udp_info(struct wlan_net_vif *wnet_vif, char* buf, int len);
 extern int aml_get_udp_info(struct wlan_net_vif *wnet_vif, char* buf, int len);
 extern int aml_mark_dfs_channel(struct wlan_net_vif *wnet_vif, char* buf, int len);
 extern int aml_unmark_dfs_channel(struct wlan_net_vif *wnet_vif, char* buf, int len);
+extern unsigned int wifi_mac_update_regdom_need_pending(struct wifi_mac *wifimac);
 extern void wifi_mac_set_country_regdom(char * arg);
 extern void wifi_mac_set_country_code(char* arg);
 extern void wifi_mac_ap_set_11h(unsigned char channel);

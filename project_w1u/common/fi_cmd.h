@@ -71,6 +71,8 @@
 #define GET_QUEUE_DEBUG_INFO_CMD (CMD_GET | 0x52)
 #define TXT_SHIFT_CFG_CMD 0x53
 #define SCAN_SCH_START_CMD 0x54
+#define COEX_STATUS_CMD 0x55
+
 /*coexist cmd1 comand*/
 #define COEXIST_EN_CMD  BIT(0)
 #define COEXIST_MAX_MISS_BCN_CNT  BIT(1)
@@ -82,6 +84,13 @@
 #define COEXIST_BE_BK_NOQOS_PRI_RANGE  BIT(7)
 #define COEXIST_INFOR_BT_WIFI_WORK_FREQ  BIT(8)
 #define COEXIST_PARAM_CMD_CONFIG  BIT(9)
+
+enum {
+    COEXIST_SUB_CMD_WORK_MODE = 0x1,
+    COEXIST_SUB_CMD_RSSI = 0x2,
+    COEXIST_SUB_CMD_INFO = 0x3,
+    COEXIST_SUB_CMD_GET_TIME = 0x4
+};
 
 //Reset_Key_Cmd
 #define ALL_KEY_RST 0xffff
@@ -506,7 +515,19 @@ enum {
     CHANNEL_RSSI_FLAG = BIT(3),
     CHANNEL_RSSI_PWR_FLAG = BIT(4),
     CHANNEL_HIGH_GAIN_FLAG = BIT(5),
+    CHANNEL_BEFORE_CON = BIT(6),
 };
+
+typedef struct  PHY_PRIMARY_CHANNEL_BIT
+{
+    unsigned int    primary_channel         :8,
+             central_frequency              :8,
+             start_frequency                :8,
+             def_pri_ch                     :3,
+             pri_ch_cfg_sel                 :1,
+             ap_bw                          :2,
+             rf_fs                          :2;
+}PHY_PRIMARY_CHANNEL_BIT;
 
 typedef struct Channel_Switch
 {
@@ -643,6 +664,19 @@ typedef struct zgb_exist_event
     struct fw_event_basic_info basic_info;
     struct zgb_event_info data_info;
 } zgb_exist_event;
+
+struct coex_event_info
+{
+    unsigned int  fdd_time;
+    unsigned int  tdd_actime;
+    unsigned int  tdd_inactime;
+};
+
+typedef struct coex_event
+{
+    struct fw_event_basic_info basic_info;
+    struct coex_event_info data_info;
+} coex_event;
 
 typedef struct tx_error_event
 {

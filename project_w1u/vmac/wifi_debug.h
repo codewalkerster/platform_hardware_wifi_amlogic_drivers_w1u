@@ -63,6 +63,10 @@ typedef enum
     AML_LOG_LEVEL_MAX,
 }DEBUG_LEVEL;
 
+enum fwlog_get_type {
+    FWLOG_SAVE_TO_FILE = 1,
+    FWLOG_PRINT_TO_CONSOLE = 2,
+};
 /*
 ** Define the "default" debug mask
 */

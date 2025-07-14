@@ -7,6 +7,7 @@ struct wifi_mac_rx_status
     unsigned char rs_encrypt;
     int rs_flags;
     int rs_rssi;
+    int rs_snr;
     int rs_datarate;
     int rs_wnet_vif_id;
     int rs_channel;
@@ -15,6 +16,7 @@ struct wifi_mac_rx_status
     unsigned int channel_bw;
     unsigned int rs_sgi;
     unsigned char rs_vendor_rate_code;
+    unsigned int rs_reserved1;
 
     union
     {

@@ -259,6 +259,36 @@ wifi_mac_scan_get_match_node(struct wifi_mac_scan_state *ss, struct wlan_net_vif
     return ret;
 }
 
+struct wifi_channel*
+wifi_mac_connect_get_target_chan(struct wifi_mac_scan_state *ss, struct wlan_net_vif *wnet_vif)
+{
+    struct scaninfo_table *st = ss->ScanTablePriv;
+    struct scaninfo_entry *se = NULL;
+    struct scaninfo_entry *se_next = NULL;
+    struct wifi_channel* target_chan = NULL;
+
+    WIFI_SCAN_SE_LIST_LOCK(st);
+    list_for_each_entry_safe(se,se_next,&st->st_entry,se_list)
+    {
+        AML_PRINT(AML_LOG_ID_CONNECT, AML_LOG_LEVEL_DEBUG, "<running> se:%p st_entry:%p \n",se, &st->st_entry);
+
+        if (WIFINET_ADDR_EQ(wnet_vif->vm_des_bssid, se->scaninfo.SI_bssid)
+            && match_ssid(se->scaninfo.SI_ssid,1, wnet_vif->vm_des_ssid))
+        {
+            target_chan = se->scaninfo.SI_chan;
+            if (target_chan != NULL) {
+                AML_PRINT_LOG_INFO("chan[%p] pri_chan:%d center_chan:%d bw:%d",target_chan, target_chan->chan_pri_num,
+                    wifi_mac_Mhz2ieee(target_chan->chan_cfreq1,0), target_chan->chan_bw);
+
+                WIFI_SCAN_SE_LIST_UNLOCK(st);
+                return target_chan;
+            }
+        }
+    }
+    WIFI_SCAN_SE_LIST_UNLOCK(st);
+    return target_chan;
+}
+
 static unsigned char
 wifi_mac_scan_set_match_node(struct wifi_mac_scan_state *ss, struct wlan_net_vif *wnet_vif)
 {
@@ -581,9 +611,11 @@ int wifi_mac_scan_parse(struct wlan_net_vif *wnet_vif, wifi_mac_ScanIterFunc *f,
         se->scaninfo.SI_age = jiffies - se->LastUpdateTime;
         (*f)(arg, &se->scaninfo);
         count++;
-        if (match_ssid(se->scaninfo.SI_ssid,  ss->ss_nssid, ss->ss_ssid))
+        if (match_ssid(se->scaninfo.SI_ssid,  ss->ss_nssid, ss->ss_ssid) && (se->scaninfo.SI_ssid[2] != '\0'))
         {
-            AML_PRINT_LOG_INFO("scan find target ap ssid:%s bssid:%s\n", ssidie_sprintf(se->scaninfo.SI_ssid), ether_sprintf(se->scaninfo.SI_bssid));
+            AML_PRINT_LOG_INFO("scan find target ap ssid:%s bssid:%s rssi:%d\n",
+                ssidie_sprintf(se->scaninfo.SI_ssid), ether_sprintf(se->scaninfo.SI_bssid) ,
+                se->scaninfo.SI_rssi - 256);
         }
     }
     WIFI_SCAN_SE_LIST_UNLOCK(st);
@@ -678,7 +710,7 @@ void wifi_mac_update_roaming_candidate_chan(struct wlan_net_vif *wnet_vif,const 
     int nssid = sp->ssid[1];
     static struct wifi_channel * apchan = NULL;
 
-    apchan= wifi_mac_scan_sta_get_ap_channel(wnet_vif, (struct wifi_mac_scan_param *)sp);
+    apchan = wifi_mac_scan_sta_get_ap_channel(wnet_vif, sp->chan, sp->htinfo, sp->htcap, sp->vht_opt);
     if (apchan == NULL) {
          AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_DEBUG, " apchan = %p\n",apchan);
         return;
@@ -719,7 +751,7 @@ void wifi_mac_scan_rx(struct wlan_net_vif *wnet_vif, const struct wifi_mac_scan_
         AML_PRINT(AML_LOG_ID_SCAN, AML_LOG_LEVEL_DEBUG, "<running> %d %s chan %d \n", sp->ssid[1], ssidie_sprintf(sp->ssid), sp->chan);
     }
 
-    apchan = wifi_mac_scan_sta_get_ap_channel(wnet_vif, (struct wifi_mac_scan_param *)sp);
+    apchan = wifi_mac_scan_sta_get_ap_channel(wnet_vif, sp->chan, sp->htinfo, sp->htcap, sp->vht_opt);
     if (apchan == NULL) {
         AML_PRINT(AML_LOG_ID_SCAN, AML_LOG_LEVEL_DEBUG, "ssid %s ,apchan = %p\n", ssidie_sprintf(sp->ssid), apchan);
         return;
@@ -952,6 +984,9 @@ void wifi_mac_set_scan_time(struct wlan_net_vif *wnet_vif) {
         }
     }
 
+    if (ss->scan_last_chan_index == 1) {
+        ss->scan_chan_wait = WIFINET_SCAN_TIME_SINGLE_CHAN_SCAN;
+    }
     ss->scan_passive_chan_wait = WIFINET_SCAN_DEFAULT_INTERVAL;
 
     if (wnet_vif->vm_scan_duration != 0) {
@@ -968,7 +1003,6 @@ static int vm_scan_setup_chan(struct wifi_mac_scan_state *ss, struct wlan_net_vi
     struct wifi_channel *c;
     static unsigned char chan_aware_cnt = 0;
     int i = 0;
-    unsigned char roaming_candidate_channel_cnt = 0;
 
 #ifdef CONFIG_P2P
     struct wlan_net_vif *tmpwnet_vif;
@@ -1016,18 +1050,15 @@ static int vm_scan_setup_chan(struct wifi_mac_scan_state *ss, struct wlan_net_vi
         }
 
     } else if (wnet_vif->vm_chan_roaming_scan_flag && !wnet_vif->vm_wmac->wm_scan->roaming_full_scan) {
+        AML_PRINT_LOG_INFO("scan roaming_candidate_chans \n");
         WIFI_ROAMING_CHANNEL_LOCK(ss);
-        for (i = 0; i < wnet_vif->vm_wmac->wm_scan->roaming_candidate_chans_cnt; i++) {
-            if (wnet_vif->vm_wmac->wm_scan->roaming_candidate_chans[i].channel->chan_cfreq1 != 0) {
-                ss->ss_chans[roaming_candidate_channel_cnt++] = wnet_vif->vm_wmac->wm_scan->roaming_candidate_chans[i].channel;
-            } else {
-                AML_PRINT_LOG_ERR("error, roaming_candidate_chans center freq is zero!\n");
-            }
+        ss->scan_last_chan_index = wnet_vif->vm_wmac->wm_scan->roaming_candidate_chans_cnt;
+
+        for (i = 0; i < ss->scan_last_chan_index; i++) {
+            ss->ss_chans[i] = wnet_vif->vm_wmac->wm_scan->roaming_candidate_chans[i].channel;
         }
-        AML_PRINT_LOG_INFO("scan roaming_candidate_chans, expect_num:%d, real_num:%d\n",
-            wnet_vif->vm_wmac->wm_scan->roaming_candidate_chans_cnt, roaming_candidate_channel_cnt);
-        ss->scan_last_chan_index = roaming_candidate_channel_cnt;
         WIFI_ROAMING_CHANNEL_UNLOCK(ss);
+
     } else if (wnet_vif->vm_chan_switch_scan_flag) {
         ss->scan_last_chan_index = 1;
         ss->ss_chans[0] = wnet_vif->vm_switchchan;
@@ -1110,8 +1141,9 @@ wifi_mac_scan_send_probe_timeout(SYS_TYPE param1,SYS_TYPE param2,
 {
     struct wifi_mac_scan_state *ss = (struct wifi_mac_scan_state *)param1;
     struct wlan_net_vif *wnet_vif = ss->VMacPriv;
+    struct wifi_mac *wifimac = wnet_vif->vm_wmac;
+    unsigned char num_of_probe_req = 0;
     unsigned char i;
-    unsigned char j;
 
     os_timer_ex_cancel(&ss->ss_probe_timer, CANCEL_SLEEP);
     //AML_PRINT_LOG_INFO("ss->scan_StateFlags:%08x, ss->ss_nssid:%d\n", ss->scan_StateFlags, ss->ss_nssid);
@@ -1120,14 +1152,22 @@ wifi_mac_scan_send_probe_timeout(SYS_TYPE param1,SYS_TYPE param2,
     {
         struct net_device *dev = wnet_vif->vm_ndev;
 
-        for (i = 0; i < ss->ss_nssid; i++)
-            for (j = 0; j < 1; ++j)
-                wifi_mac_send_probereq(wnet_vif->vm_mainsta, wnet_vif->vm_myaddr, dev->broadcast,
-                    dev->broadcast, ss->ss_ssid[i].ssid, ss->ss_ssid[i].len, wnet_vif->vm_opt_ie, wnet_vif->vm_opt_ie_len);
+        for (i = 0; i < ss->ss_nssid; i++) {
+
+            if ((ss->ss_ssid[i].ssid[0] == '\0') && (ss->ss_ssid[i].len == 0)) {
+                continue;
+            }
+
+            wifi_mac_send_probereq(wnet_vif->vm_mainsta, wnet_vif->vm_myaddr, dev->broadcast,
+                dev->broadcast, ss->ss_ssid[i].ssid, ss->ss_ssid[i].len, wnet_vif->vm_opt_ie, wnet_vif->vm_opt_ie_len);
+        }
 
         if (!wnet_vif->vm_p2p->p2p_enable || (wnet_vif->vm_p2p->p2p_enable && ss->ss_nssid == 0)) {
-            wifi_mac_send_probereq(wnet_vif->vm_mainsta, wnet_vif->vm_myaddr, dev->broadcast,
-                dev->broadcast, "", 0, wnet_vif->vm_opt_ie, wnet_vif->vm_opt_ie_len);
+            num_of_probe_req = wifimac->scan_num_of_probe_req / 2;
+            for (i = 0; i < num_of_probe_req; i++) {
+                wifi_mac_send_probereq(wnet_vif->vm_mainsta, wnet_vif->vm_myaddr, dev->broadcast,
+                    dev->broadcast, "", 0, wnet_vif->vm_opt_ie, wnet_vif->vm_opt_ie_len);
+            }
         }
     }
 }
@@ -1234,6 +1274,7 @@ void wifi_mac_scan_channel(struct wifi_mac *wifimac)
     struct wifi_channel *chan;
     enum wifi_mac_macmode last_mac_mode;
     unsigned short dwell_time = 0;
+    unsigned char num_of_probe_req = 0;
 
     //AML_PRINT_LOG_INFO("ss->scan_StateFlags:%08x\n", ss->scan_StateFlags);
     if (!(ss->scan_StateFlags & SCANSTATE_F_CHANNEL_SWITCH_COMPLETE)) {
@@ -1266,7 +1307,7 @@ void wifi_mac_scan_channel(struct wifi_mac *wifimac)
             ss->scan_StateFlags |= SCANSTATE_F_RESTORE;
             ss->scan_StateFlags &= ~SCANSTATE_F_TX_DONE;
             if ((wnet_vif->vm_opmode == WIFINET_M_STA) && (wnet_vif->vm_state == WIFINET_S_CONNECTED)) {
-                wifi_mac_scan_set_gain(wifimac, wnet_vif->vm_scanchan_rssi);
+                wifi_mac_scan_set_gain(wifimac, wnet_vif->vm_scanchan_rssi, !wifimac->is_connect_set_gain);
             }
          }
     }
@@ -1296,11 +1337,19 @@ void wifi_mac_scan_channel(struct wifi_mac *wifimac)
             wnet_vif->wnet_vif_id, ss->scan_next_chan_index, chan->chan_pri_num, chan->chan_cfreq1, wnet_vif->vm_p2p->p2p_enable);
 
         if ((!wnet_vif->vm_p2p->p2p_enable || (wnet_vif->vm_p2p->p2p_enable && ss->ss_nssid == 0)) && !wnet_vif->vm_chan_switch_scan_flag) {
-             wifi_mac_send_probereq(wnet_vif->vm_mainsta, wnet_vif->vm_myaddr, dev->broadcast,
-                 dev->broadcast, "", 0, wnet_vif->vm_opt_ie, wnet_vif->vm_opt_ie_len);
+            num_of_probe_req = (wifimac->scan_num_of_probe_req / 2) + (wifimac->scan_num_of_probe_req % 2);
+            for (i = 0; i < num_of_probe_req; i++) {
+                wifi_mac_send_probereq(wnet_vif->vm_mainsta, wnet_vif->vm_myaddr, dev->broadcast,
+                    dev->broadcast, "", 0, wnet_vif->vm_opt_ie, wnet_vif->vm_opt_ie_len);
+            }
         }
 
         for (i = 0; i < ss->ss_nssid; i++) {
+
+            if ((ss->ss_ssid[i].ssid[0] == '\0') && (ss->ss_ssid[i].len == 0)) {
+                continue;
+            }
+
             if (wnet_vif->vm_scan_before_connect_flag) {
                 wifi_mac_send_probereq(wnet_vif->vm_mainsta, wnet_vif->vm_myaddr, wnet_vif->vm_connchan.da,
                     wnet_vif->vm_connchan.bssid, ss->ss_ssid[i].ssid, ss->ss_ssid[i].len, wnet_vif->vm_opt_ie, wnet_vif->vm_opt_ie_len);
@@ -1587,7 +1636,8 @@ int wifi_mac_scan_timeout_ex(void *arg)
     struct wifi_mac_scan_state *ss = (struct wifi_mac_scan_state *) arg;
     struct wlan_net_vif *wnet_vif = ss->VMacPriv;
     struct wifi_mac *wifimac = wnet_vif->vm_wmac;
-
+    struct hal_private *hal_priv = hal_get_priv();
+    struct hw_interface* hif = hif_get_hw_interface();
     //AML_PRINT_LOG_INFO("ss->scan_StateFlags:%08x\n", ss->scan_StateFlags);
 
     WIFI_SCAN_LOCK(ss);
@@ -1596,7 +1646,8 @@ int wifi_mac_scan_timeout_ex(void *arg)
     }
 
     if (ss->scan_StateFlags & SCANSTATE_F_WAIT_CHANNEL_SWITCH) {
-        AML_PRINT(AML_LOG_ID_SCAN, AML_LOG_LEVEL_WARN,"switch channel timeout \n");
+        AML_PRINT(AML_LOG_ID_SCAN, AML_LOG_LEVEL_WARN,"switch channel timeout %d %d %d \n",hal_priv->gpio_irq_cnt,
+            hif->HiStatus.HiTask_enter_num,hif->HiStatus.HiTask_exit_num);
         ss->scan_StateFlags &= ~SCANSTATE_F_WAIT_CHANNEL_SWITCH;
         ss->scan_StateFlags |= SCANSTATE_F_CHANNEL_SWITCH_COMPLETE;
     }
@@ -1698,6 +1749,7 @@ void wifi_mac_end_scan( struct wifi_mac_scan_state *ss)
     struct scaninfo_entry *se = NULL, *SI_next = NULL;
     struct scaninfo_table *st = ss->ScanTablePriv;
     unsigned char encryption_type[5];
+    unsigned char vm_scan_before_connect_flag = 0;
 
     if (!(wifimac->wm_flags & WIFINET_F_SCAN)) {
         AML_PRINT_LOG_ERR("not in scan status\n");
@@ -1736,7 +1788,6 @@ void wifi_mac_end_scan( struct wifi_mac_scan_state *ss)
 
     wifi_mac_scan_end(wifimac);
     wifimac->wm_lastscan = jiffies;
-    ss->scan_StateFlags = 0;
 
     /* restore mac mode after scanning */
     if (wnet_vif->vm_mainsta) {
@@ -1802,8 +1853,11 @@ void wifi_mac_end_scan( struct wifi_mac_scan_state *ss)
             before_conn_scan_times = 0;
 
         } else {
-            if (wnet_vif->vm_scan_before_connect_flag) {
+            if (wnet_vif->vm_scan_before_connect_flag || (ss->scan_CfgFlags & WIFINET_SCANCFG_CONNECT)) {
                 before_conn_scan_times++;
+                vm_scan_before_connect_flag = wnet_vif->vm_scan_before_connect_flag;
+            } else {
+                before_conn_scan_times = 0;
             }
         }
     } else if ((wnet_vif->vm_opmode == WIFINET_M_HOSTAP)
@@ -1838,6 +1892,7 @@ void wifi_mac_end_scan( struct wifi_mac_scan_state *ss)
         }
     }
     wifi_mac_restore_wnet_vif_channel(wnet_vif);
+    ss->scan_StateFlags = 0;
     wifimac->wm_flags &= ~WIFINET_F_SCAN;
     ss->scan_CfgFlags = 0;
     wifimac->wm_p2p_connection_protect = 0;
@@ -1849,11 +1904,9 @@ void wifi_mac_end_scan( struct wifi_mac_scan_state *ss)
     wifi_mac_scan_access(wnet_vif);
 
     WIFI_ALPHA_LOCK(wifimac);
-    if (wifimac->wm_alpha_set_forbid & SCAN_FORBIDDEN) {
-        wifi_mac_run_delayed_country_switch(wifimac);
-        wifimac->wm_alpha_set_forbid &= ~SCAN_FORBIDDEN;
-    }
+    wifimac->wm_alpha_set_forbid = 0;
     WIFI_ALPHA_UNLOCK(wifimac);
+    wifi_mac_run_delayed_country_switch(wifimac, WIFINET_REGDOM_PENDING_F_SCAN);
 
     if (wnet_vif->vm_chan_switch_scan_flag) {
         wifi_mac_check_switch_chan_result(wnet_vif);
@@ -1886,7 +1939,7 @@ void wifi_mac_end_scan( struct wifi_mac_scan_state *ss)
     }
 
     if (before_conn_scan_times == 1) {
-        wnet_vif->vm_scan_before_connect_flag = 1;
+        wnet_vif->vm_scan_before_connect_flag = vm_scan_before_connect_flag;
         wifi_mac_start_scan(wnet_vif, WIFINET_SCANCFG_USERREQ | WIFINET_SCANCFG_ACTIVE | WIFINET_SCANCFG_FLUSH |
         WIFINET_SCANCFG_CREATE, wnet_vif->vm_des_nssid, wnet_vif->vm_des_ssid);
 
@@ -2104,7 +2157,16 @@ int wifi_mac_scan_before_connect(struct wifi_mac_scan_state *ss, struct wlan_net
     }
 
     if (wifi_mac_scan_get_match_node(ss, wnet_vif) == 0) {
-         AML_PRINT_LOG_INFO("not found bss in former scan results\n");
+
+        if (wnet_vif->vm_des_channel != NULL) {
+            wnet_vif->vm_scan_before_connect_flag = 1;
+            wnet_vif->vm_connchan.conn_chan[wnet_vif->vm_connchan.num++] = wnet_vif->vm_des_channel;
+            WIFINET_ADDR_COPY(wnet_vif->vm_connchan.da, wnet_vif->vm_des_bssid);
+            WIFINET_ADDR_COPY(wnet_vif->vm_connchan.bssid, wnet_vif->vm_des_bssid);
+            AML_PRINT_LOG_INFO("add connet scan chan:%d count:%d \n",wnet_vif->vm_des_channel->chan_pri_num, wnet_vif->vm_connchan.num);
+        } else {
+            AML_PRINT_LOG_INFO("no connect bss in former scan list and vm_des_channel is null\n");
+        }
 
     } else {
         wnet_vif->vm_scan_before_connect_flag = 1;
@@ -2171,7 +2233,7 @@ int wifi_mac_start_scan(struct wlan_net_vif *wnet_vif, int flags,
         }
 
         if (wnet_vif->vm_state != WIFINET_S_CONNECTED) {
-            wifi_mac_scan_set_gain(wifimac, wnet_vif->vm_scanchan_rssi);
+            wifi_mac_scan_set_gain(wifimac, wnet_vif->vm_scanchan_rssi, 2); //before connect set gain to 0x93, 2024-12-04
         }
     }
 
@@ -2532,87 +2594,142 @@ static inline unsigned char get_chan_flags(unsigned int flags)
     return chan_flags;
 }
 
+#ifdef PNO_SUPPORT
 
 struct mac_addr mac_addr_bcst = {{0xFFFF, 0xFFFF, 0xFFFF}};
 
-int aml_get_sched_scan_req(struct wlan_net_vif *wnet_vif, struct cfg80211_sched_scan_request *request,
-    sched_scan_ptr *host_sched_req)
+int aml_build_sched_scan_request(struct wlan_net_vif *wnet_vif, struct cfg80211_sched_scan_request *request)
 {
+    sched_scan_ptr *host_sched_req = &wnet_vif->sched_scan_req;
     struct scanu_start_req *req = &(host_sched_req->scanu_req);
     int i;
     unsigned char chan_flags = 0;
 
-    host_sched_req->min_rssi_thold = request->match_sets->rssi_thold;
+#if KERNEL_VERSION(3, 15, 0) <= CFG80211_VERSION_CODE
+#define SS_THR(_ptr) ((_ptr)->min_rssi_thold)
+#define SS_M_THR(_ptr, _idx) ((_ptr)->match_sets[_idx].rssi_thold)
+#else
+#define SS_THR(_ptr) ((_ptr)->rssi_thold)
+#define SS_M_THR(_ptr, _idx) SS_THR(_ptr)
+#endif
+#if KERNEL_VERSION(4, 4, 0) <= CFG80211_VERSION_CODE
+#define SS_INTV(_ptr, _idx) ((_ptr)->scan_plans[_idx].interval)
+#else
+#define SS_INTV(_ptr, _idx) ((_ptr)->interval)
+#endif
+
+    if (!request) {
+        AML_PRINT_LOG_INFO("request null\n");
+        return 0;
+    }
+
+    if ((request->match_sets == NULL) || (request->n_match_sets == 0)) {
+        AML_PRINT_LOG_INFO("match_sets %px n_match_sets %d\n",request->match_sets, request->n_match_sets);
+        return -ENOMEM;
+    }
+
+    AML_PRINT_LOG_INFO("nssid %d, nmatch %d, nchannel %d, flags %u, rssi %d\n",
+        request->n_ssids, request->n_match_sets, request->n_channels, request->flags, SS_THR(request));
+
+    memset(host_sched_req, 0x00, sizeof(*host_sched_req));
+
+    // It takes a certain amount of time from the instruction being issued to the fw to the fw entering the suspend state
+    host_sched_req->delay = request->delay + 10;
 
      /* Set parameters */
     req->vif_idx = wnet_vif->wnet_vif_id;
-    req->chan_cnt = (unsigned char)min_t(int, AML_2G_CHANNELS_NUM + AML_5G_CHANNELS_NUM, request->n_channels);
-    req->ssid_cnt = (unsigned char)min_t(int, SCAN_SSID_MAX, request->n_ssids);
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4,12,0)
+    req->duration = 111000;
+
+#if CFG80211_VERSION_CODE > KERNEL_VERSION(4,12,0)
     memcpy(&req->bssid, request->match_sets->bssid, 6);
 #else
     req->bssid = mac_addr_bcst;
 #endif
-    if (req->ssid_cnt == 0)
-        chan_flags |= CHAN_NO_IR;
-    for (i = 0; i < req->ssid_cnt; i++) {
-        int j;
-        for (j = 0; j < request->ssids[i].ssid_len; j++)
-            req->ssid[i].array[j] = request->ssids[i].ssid[j];
-        req->ssid[i].length = request->ssids[i].ssid_len;
+
+    if (request->ssids) {
+        for (i = 0; i < request->n_ssids && req->ssid_cnt < SCAN_SSID_MAX; i++) {
+            AML_PRINT(AML_LOG_ID_SCAN, AML_LOG_LEVEL_DEBUG, "ssids: [%s]\n", request->ssids[i].ssid);
+
+            if (request->ssids[i].ssid_len == 0 || request->ssids[i].ssid[0] == 0) {
+                AML_PRINT_LOG_INFO("ignore null ssid %d\n", i);
+                continue;
+            }
+
+            memcpy(req->ssid[req->ssid_cnt].array, request->ssids[i].ssid, request->ssids[i].ssid_len);
+            req->ssid[req->ssid_cnt].length = request->ssids[i].ssid_len;
+            req->ssid_cnt++;
+        }
     }
 
-/*
-    if (request->ie) {
-        if (aml_ipc_buf_a2e_alloc(aml_hw, &aml_hw->scan_ie,
-                                   request->ie_len, request->ie)) {
-            netdev_err(aml_vif->ndev, "Failed to allocate IPC buf for SCAN IEs\n");
-            return -ENOMEM;
-        }
+    host_sched_req->min_rssi_thold = SS_THR(request);
 
-        req->add_ie_len = request->ie_len;
-        req->add_ies = aml_hw->scan_ie.dma_addr;
-    } else */
-    {
+    if (request->match_sets) {
+        for (i = 0; i < request->n_match_sets && host_sched_req->match_count < MAX_MATCH_COUNT; i++) {
+            AML_PRINT(AML_LOG_ID_SCAN, AML_LOG_LEVEL_DEBUG, "match: [%s] [%s] [%d]\n",
+                request->match_sets[i].ssid.ssid, ether_sprintf(request->match_sets[i].bssid), SS_M_THR(request, i));
+
+            if (request->match_sets[i].ssid.ssid_len == 0 || request->match_sets[i].ssid.ssid[0] == 0) {
+                AML_PRINT_LOG_INFO("ignore null ssid %d\n", i);
+                continue;
+            }
+
+            memcpy(host_sched_req->match_sets[host_sched_req->match_count].ssId.array,
+                   request->match_sets[i].ssid.ssid,
+                   request->match_sets[i].ssid.ssid_len);
+            host_sched_req->match_sets[host_sched_req->match_count].ssId.length = request->match_sets[i].ssid.ssid_len;
+            host_sched_req->match_sets[host_sched_req->match_count].rssiThreshold = (SS_M_THR(request, i) + 256 > 0)?(SS_M_THR(request, i) + 256):0;
+
+#if CFG80211_VERSION_CODE > KERNEL_VERSION(4,12,0)
+            memcpy(&host_sched_req->match_sets[host_sched_req->match_count].bssid, request->match_sets[i].bssid, ETH_ALEN);
+#endif
+            host_sched_req->match_count++;
+        }
+    }
+
+    if (request->n_channels) {
+        if (req->ssid_cnt == 0) {
+            chan_flags |= CHAN_NO_IR;
+        }
+        for (i = 0; i < request->n_channels && req->chan_cnt < AML_2G_CHANNELS_NUM + AML_5G_CHANNELS_NUM; i++) {
+            struct ieee80211_channel *chan = request->channels[i];
+
+            AML_PRINT(AML_LOG_ID_SCAN, AML_LOG_LEVEL_DEBUG, "channel: band %d, cfreq %d, flags %u\n",
+                chan->band, chan->center_freq, chan->flags);
+
+            req->chan[req->chan_cnt].band = chan->band;
+            req->chan[req->chan_cnt].freq = chan->center_freq;
+            req->chan[req->chan_cnt].flags = chan_flags | get_chan_flags(chan->flags);
+            req->chan_cnt++;
+        }
+    }
+
+    if (request->scan_plans) {
+        for (i = 0; i < request->n_scan_plans && host_sched_req->n_scan_plans < MAX_SCHED_SCAN_PLANS; i++) {
+            AML_PRINT(AML_LOG_ID_SCAN, AML_LOG_LEVEL_DEBUG, "scan_plan: interval %d, iterations %d\n",
+                SS_INTV(request, i), request->scan_plans[i].iterations);
+
+            host_sched_req->scan_plans[host_sched_req->n_scan_plans].interval = SS_INTV(request, i);
+            host_sched_req->scan_plans[host_sched_req->n_scan_plans].iterations = request->scan_plans[i].iterations;
+            host_sched_req->n_scan_plans++;
+        }
+    }
+
+    if (request->ie) {
+        //todo need push ie to fw
+    } else {
         req->add_ie_len = 0;
         req->add_ies = 0;
     }
 
-    for (i = 0; i < req->chan_cnt; i++) {
-        struct ieee80211_channel *chan = request->channels[i];
+    wnet_vif->sched_scan_en = 1;
 
-        req->chan[i].band = chan->band;
-        req->chan[i].freq = chan->center_freq;
-        req->chan[i].flags = chan_flags | get_chan_flags(chan->flags);
-        //req->chan[i].tx_power = chan_to_fw_pwr(chan->max_reg_power);
-    }
-
-    host_sched_req->n_scan_plans = (u8)min_t(int, MAX_SCHED_SCAN_PLANS,request->n_scan_plans);
-    host_sched_req->match_count = (u8)min_t(int, MAX_MATCH_COUNT,request->n_match_sets);
-
-    for (i = 0; i < host_sched_req->n_scan_plans; i++) {
-        host_sched_req->scan_plans[i].interval = request->scan_plans[i].interval;
-        host_sched_req->scan_plans[i].iterations = request->scan_plans[i].iterations;
-    }
-
-     for (i = 0; i < host_sched_req->match_count; i++) {
-        host_sched_req->match_sets[i].rssiThreshold = request->match_sets[i].rssi_thold;
-
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4,12,0)
-        memcpy(&host_sched_req->match_sets[i].bssid, request->match_sets[i].bssid, ETH_ALEN);
-#endif
-
-        host_sched_req->match_sets[i].ssId.length = request->match_sets[i].ssid.ssid_len;
-        memcpy(&host_sched_req->match_sets[i].ssId.array[0],
-               request->match_sets[i].ssid.ssid,
-               request->match_sets[i].ssid.ssid_len);
-    }
+#undef SS_THR
+#undef SS_M_THR
+#undef SS_INTV
 
     return 0;
-
 }
 
-#ifdef PNO_SUPPORT
 
 #define FMAC_CHAN_2GHZ 0x4000  /* 2.4 GHz  channel. */
 #define FMAC_CHAN_5GHZ 0x8000  /* 5 GHz  channel */
@@ -2696,28 +2813,26 @@ void init_sched_param(sched_scan_ptr * sched_param)
 
 }
 
-int aml_send_sched_scan_req(struct wlan_net_vif *wnet_vif,
-    struct cfg80211_sched_scan_request *request)
+int aml_send_sched_scan_req(struct wlan_net_vif *wnet_vif)
 {
     sched_scan_cmd sched_start_req;
     struct wifi_mac *wifimac = wifi_mac_get_mac_handle();
     struct hw_interface *hif = hif_get_hw_interface();
-    sched_scan_ptr *host_sched_req = NULL;
+    sched_scan_ptr *host_sched_req = &wnet_vif->sched_scan_req;
+
+    if (!wnet_vif->sched_scan_en) {
+        AML_PRINT_LOG_INFO("no sched_scan request");
+        return 0;
+    }
+
     sched_start_req.vid = wnet_vif->wnet_vif_id;
     sched_start_req.Cmd = SCAN_SCH_START_CMD;
     sched_start_req.enable = 1;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4,12,0)
-    //sched_start_req.reqid = request->reqid;
-#endif
+    sched_start_req.sched_param = (sched_scan_ptr *)(SYS_TYPE)(MAC_SRAM_BASE + SRAM_LEN - 512);
 
-    sched_start_req.sched_param = (sched_scan_ptr *)(SYS_TYPE)(MAC_SRAM_BASE + SRAM_LEN + 15*1024);
-    host_sched_req = (sched_scan_ptr *)kmalloc(sizeof(sched_scan_ptr), GFP_KERNEL);
-/*
-    if (aml_get_sched_scan_req(wnet_vif, request, host_sched_req)) {
-        return -1;
-    } */
+    /* for test !! */
+    //init_sched_param(host_sched_req);
 
-    init_sched_param(host_sched_req);
     hif->hif_ops.hi_write_reg32(RG_SCFG_SRAM_FUNC, MAC_REG_BASE);
     hif->hif_ops.hi_write_sram((unsigned char*)host_sched_req, (unsigned char*)(SYS_TYPE)sched_start_req.sched_param, sizeof(sched_scan_ptr));
 
@@ -2725,13 +2840,14 @@ int aml_send_sched_scan_req(struct wlan_net_vif *wnet_vif,
     hi_set_cmd((unsigned char*)&sched_start_req, sizeof(sched_scan_cmd));
     HAL_END_LOCK();
 
-    kfree(host_sched_req);
+    wnet_vif->sched_scan_en = 0;
     wifimac->sched_scan = 1;
-    printk("---aml_send_sched_scan_req-hkk\n");
+    AML_PRINT_LOG_INFO("aml_send_sched_scan_req start\n");
     return 0;
 }
 
-
+// Not used for the time being
+// It is not allowed and unnecessary to issue this command in the non-suspend state
 int aml_send_sched_scan_stop(struct wlan_net_vif *wnet_vif,
     unsigned long long reqid)
 {

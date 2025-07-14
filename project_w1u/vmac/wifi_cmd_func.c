@@ -587,6 +587,26 @@ int aml_set_mac_amsdu(struct wlan_net_vif *wnet_vif, char* buf, int len)
     return 0;
 }
 
+static struct wifi_channel * wifi_mac_find_new_chan(struct wifi_mac *wifimac, unsigned short cur_chan,
+    enum wifi_mac_bwc_width cur_bw, unsigned short cur_freq)
+{
+    struct wifi_channel *c = NULL;
+    int i = 0;
+
+    WIFI_NEW_CHANNEL_LOCK(wifimac);
+    for (i = 0; i < wifimac->wm_new_nchans; i++) {
+        c = &wifimac->wm_new_channels[i];
+        if ((c->chan_pri_num== cur_chan) && (c->chan_bw == cur_bw) && (c->chan_cfreq1 == cur_freq)) {
+            break;
+        }
+        c = NULL;
+    }
+    WIFI_NEW_CHANNEL_UNLOCK(wifimac);
+
+    return c;
+
+}
+
 static struct wifi_channel * wifi_mac_find_chan_unlock( struct wifi_mac *wifimac, unsigned short cur_chan,
     enum wifi_mac_bwc_width cur_bw, unsigned short cur_freq)
 {
@@ -605,16 +625,104 @@ static struct wifi_channel * wifi_mac_find_chan_unlock( struct wifi_mac *wifimac
     return NULL;
 }
 
+struct wifi_channel * wifi_mac_find_first_both_support_chan(struct wifi_mac *wifimac)
+{
+    struct wifi_channel *chan = NULL;
+    struct wifi_channel *tar_chan = NULL;
+    int i = 0;
+
+    WIFI_CHANNEL_LOCK(wifimac);
+    for (i = 0; i < wifimac->wm_nchans; i++) {
+        chan = &wifimac->wm_channels[i];
+        tar_chan = wifi_mac_find_new_chan(wifimac, chan->chan_pri_num, chan->chan_bw, chan->chan_cfreq1);
+        if (tar_chan != NULL) {
+            break;
+        }
+    }
+    WIFI_NEW_CHANNEL_UNLOCK(wifimac);
+    return tar_chan;
+}
+
+unsigned int wifi_mac_update_regdom_need_pending(struct wifi_mac *wifimac)
+{
+    struct wlan_net_vif *wnet_vif = NULL;//for iterator
+    struct wifi_channel *switch_chan = NULL;
+    struct wifi_channel *pchan = NULL;
+    struct wifi_channel *tarchan = NULL;
+
+    // SI_chan in scan_info shouldn't use continue
+    wifi_mac_scan_flush(wifimac);
+
+    list_for_each_entry(wnet_vif, &wifimac->wm_wnet_vifs, vm_next) {
+        pchan = wnet_vif->vm_curchan;
+        if (WIFINET_IS_CHAN_ERR(pchan)) {
+            // This vif had not jioned a bss, do nothing
+            continue;
+        }
+
+        tarchan = wifi_mac_find_new_chan(wifimac, pchan->chan_pri_num, pchan->chan_bw, pchan->chan_cfreq1);
+        if (tarchan) {
+            // Target country support current channel, do nothing
+            continue;
+        }
+
+        switch (wnet_vif->vm_opmode) {
+            case WIFINET_M_HOSTAP:
+            case WIFINET_M_P2P_GO:
+                if (wnet_vif->vm_state == WIFINET_S_CONNECTED) {
+                    if (wifi_mac_p2p_home_channel_enabled(wnet_vif) && !wifi_mac_if_dfs_channel(wifimac, wifimac->wm_p2p_home_channel)) {
+                        switch_chan = wifi_mac_find_chan(wifimac, wifimac->wm_p2p_home_channel, WIFINET_BWC_WIDTH20, wifimac->wm_p2p_home_channel);
+                    } else {
+                        if (if_southamerica_country(wifimac->wm_country.iso)) {
+                            switch_chan = wifi_mac_find_chan(wifimac,149, WIFINET_BWC_WIDTH20, 149);
+                        } else {
+                            switch_chan = wifi_mac_find_chan(wifimac,36, WIFINET_BWC_WIDTH20, 36);
+                        }
+                    }
+                    if (!switch_chan || !wifi_mac_find_new_chan(wifimac, switch_chan->chan_pri_num, switch_chan->chan_bw, switch_chan->chan_cfreq1)) {
+                        AML_PRINT_LOG_INFO("Target chan can't be supported by the both the current country and tar country\n");
+                        switch_chan = wifi_mac_find_first_both_support_chan(wifimac);
+                    }
+                    if (!switch_chan) {
+                        AML_PRINT_LOG_INFO("Can't find a chan supported by current country and tar country\n");
+                        wifi_mac_top_sm(wnet_vif, WIFINET_S_INIT,0);
+                    } else {
+                        channel_switch_announce_trigger(wifimac, switch_chan);
+                        AML_PRINT_LOG_INFO("delay country switch, need csa first\n");
+                        wifi_mac_set_pending_country_switch_nonlock(wifimac, WIFINET_REGDOM_PENDING_F_CSA);
+                    }
+                } else {
+                    wifi_mac_top_sm(wnet_vif, WIFINET_S_INIT, 0);
+                }
+                break;
+            case WIFINET_M_STA:
+            case WIFINET_M_P2P_CLIENT:
+                wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
+                break;
+            default:
+                break;
+        }
+    }
+
+    if (wifimac->wm_alpha_set_forbid) {
+        AML_PRINT_LOG_INFO("country switch forbidden, save pending country [%s]\n", wifimac->wm_alpha_target);
+        wifi_mac_set_pending_country_switch_nonlock(wifimac, WIFINET_REGDOM_PENDING_F_SCAN);
+    }
+
+    return wifimac->wm_alpha_pending;
+}
+
 void wifi_mac_set_country_regdom_task(SYS_TYPE param1, SYS_TYPE param2, SYS_TYPE param3, SYS_TYPE param4, SYS_TYPE param5)
 {
     struct wifi_mac *wifimac = wifi_mac_get_mac_handle();
     struct drv_private* drv_priv = wifimac->drv_priv;
     struct wlan_net_vif *selected_wnet_vif = drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC];
     struct wlan_net_vif *wnet_vif = NULL;//for iterator
-    struct wifi_channel old_chans[WIFI_MAX_VID] = {0};
     struct wifi_channel saved_roaming_chans[ROAMING_CANDIDATE_CHAN_MAX] = {0};
+    struct wifi_channel old_chans[WIFI_MAX_VID] = {0};
     struct wifi_channel *pchan = NULL;
     struct wifi_channel *roaming_chan = NULL;
+    unsigned char is_gchan_set = 0;
     unsigned char roaming_chan_cnt = 0;
     unsigned char alpha[3] = {param1, param2, 0};
     unsigned char cur_txpwrplan = 0;
@@ -631,13 +739,13 @@ void wifi_mac_set_country_regdom_task(SYS_TYPE param1, SYS_TYPE param2, SYS_TYPE
 
     if (preempt_scan(selected_wnet_vif->vm_ndev, 100, 100) != 0) {
         AML_PRINT_LOG_INFO("delay country switch: target country %s\n", alpha);
-        wifimac->wm_alpha_pending = 1;
+        wifi_mac_set_pending_country_switch(wifimac, WIFINET_REGDOM_PENDING_F_P2P_CON);
         goto end;
     }
 
     WIFI_ALPHA_LOCK(wifimac);
     if ((alpha[0] != wifimac->wm_alpha_target[0]) || (alpha[1] != wifimac->wm_alpha_target[1])) {
-        AML_PRINT_LOG_INFO("alpha [%s] has beed covered by target alpha [%s], waste country [%s]\n", alpha, wifimac->wm_alpha_target, alpha);
+        AML_PRINT_LOG_INFO("alpha [%s] has been covered by target alpha [%s], waste country [%s]\n", alpha, wifimac->wm_alpha_target, alpha);
         alpha[0] = wifimac->wm_alpha_target[0];
         alpha[1] = wifimac->wm_alpha_target[1];
     } else {
@@ -645,7 +753,6 @@ void wifi_mac_set_country_regdom_task(SYS_TYPE param1, SYS_TYPE param2, SYS_TYPE
     }
 
     WIFI_CHANNEL_LOCK(wifimac);
-
     list_for_each_entry(wnet_vif, &wifimac->wm_wnet_vifs, vm_next) {
         pchan = &(old_chans[wnet_vif->wnet_vif_id]);
         if (!WIFINET_IS_CHAN_ERR(wnet_vif->vm_curchan)) {
@@ -679,32 +786,21 @@ void wifi_mac_set_country_regdom_task(SYS_TYPE param1, SYS_TYPE param2, SYS_TYPE
 
     list_for_each_entry(wnet_vif, &wifimac->wm_wnet_vifs, vm_next) {
         pchan = &(old_chans[wnet_vif->wnet_vif_id]);
-        if (pchan->chan_cfreq1 != 0) {
-            wnet_vif->vm_curchan = wifi_mac_find_chan_unlock(wifimac, pchan->chan_pri_num, pchan->chan_bw, pchan->chan_cfreq1);
-            if (!wnet_vif->vm_curchan) {
-
-                WIFI_CHANNEL_UNLOCK(wifimac);
-
-                if ((wnet_vif->vm_opmode == WIFINET_M_HOSTAP) && (wnet_vif->vm_state == WIFINET_S_CONNECTED)) {
-                    if (wifi_mac_p2p_home_channel_enabled(wnet_vif) && !wifi_mac_if_dfs_channel(wifimac, wifimac->wm_p2p_home_channel)) {
-                        channel_switch_announce_trigger(wifimac, wifimac->wm_p2p_home_channel, WIFINET_BWC_WIDTH20, wifimac->wm_p2p_home_channel);
-                    } else {
-                        if (if_southamerica_country(wifimac->wm_country.iso)) {
-                            channel_switch_announce_trigger(wifimac, 149, WIFINET_BWC_WIDTH20, 149);
-                        } else {
-                            channel_switch_announce_trigger(wifimac, 36, WIFINET_BWC_WIDTH20, 36);
-                        }
-                    }
-                } else {
-                    wifi_mac_top_sm(wnet_vif, WIFINET_S_INIT,0);
-                }
-
-                WIFI_CHANNEL_LOCK(wifimac);
-            } else {
-                AML_PRINT_LOG_INFO("vif[%d] now chan info => pri_num: %d, bw: %d, chan_cfreq1: %d\n", wnet_vif->wnet_vif_id,
-                    wnet_vif->vm_curchan->chan_pri_num, wnet_vif->vm_curchan->chan_bw, wnet_vif->vm_curchan->chan_cfreq1);
-            }
+        if (pchan->chan_cfreq1 == 0) {
+            continue;
         }
+        wnet_vif->vm_curchan = wifi_mac_find_chan_unlock(wifimac, pchan->chan_pri_num, pchan->chan_bw, pchan->chan_cfreq1);
+        if (WIFINET_IS_CHAN_ERR(wnet_vif->vm_curchan)) {
+            // This situation shouldn't appear, we should handle all situation before switch to target channel
+            AML_PRINT_LOG_WRAN("Target channel null, this situation shouldn't appear!\n");
+        } else {
+            wifimac->wm_curchan = wnet_vif->vm_curchan;
+            is_gchan_set = 1;
+        }
+    }
+
+    if (!is_gchan_set) {
+        wifimac->wm_curchan = WIFINET_CHAN_ERR;
     }
 
     if( cur_txpwrplan != drv_priv->drv_config.cfg_txpoweplan) {

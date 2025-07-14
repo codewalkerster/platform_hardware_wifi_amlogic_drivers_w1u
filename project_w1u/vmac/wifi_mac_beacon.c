@@ -101,6 +101,7 @@ wifi_mac_beacon_init(struct wifi_station *sta, struct wifi_mac_beacon_offsets *b
     bo->bo_tim_trailer = frm;
     if ((wnet_vif->vm_opmode == WIFINET_M_HOSTAP)
         && ((wifimac->wm_flags & WIFINET_F_DOTH) || (wifimac->wm_flags_ext & WIFINET_FEXT_COUNTRYIE))) {
+        bo->bo_country = frm;
         frm = wifi_mac_add_country(frm, wifimac);
     }
 
@@ -172,6 +173,7 @@ wifi_mac_beacon_init(struct wifi_station *sta, struct wifi_mac_beacon_offsets *b
 
     bo->bo_ch_sw_wrp = frm;
     bo->bo_appie_buf = frm;
+    bo->bo_bcn_end = frm;
     bo->bo_appie_buf_len = 0;
     wnet_vif->vm_flags_ext |= WIFINET_FEXT_APPIE_UPDATE;
     bo->bo_tim_trailerlen = frm - bo->bo_tim_trailer;
@@ -245,6 +247,7 @@ void wifi_mac_beacon_update_csaie(struct wifi_station *sta,
     bo->bo_ch_sw_wrp += WIFINET_CHANSWITCHANN_BYTES;
     bo->bo_extchanswitch += WIFINET_CHANSWITCHANN_BYTES;
     bo->bo_wme += WIFINET_CHANSWITCHANN_BYTES;
+    bo->bo_bcn_end += WIFINET_CHANSWITCHANN_BYTES;
     if (bo->bo_erp)
         bo->bo_erp += WIFINET_CHANSWITCHANN_BYTES;
 
@@ -263,6 +266,7 @@ void wifi_mac_beacon_update_csaie(struct wifi_station *sta,
             bo->bo_appie_buf += WIFINET_EXTCHANSWITCHANN_BYTES;
             bo->bo_ch_sw_wrp += WIFINET_EXTCHANSWITCHANN_BYTES;
             bo->bo_wme += WIFINET_EXTCHANSWITCHANN_BYTES;
+            bo->bo_bcn_end += WIFINET_EXTCHANSWITCHANN_BYTES;
             if (bo->bo_erp)
                 bo->bo_erp += WIFINET_EXTCHANSWITCHANN_BYTES;
 
@@ -279,9 +283,136 @@ void wifi_mac_beacon_update_csaie(struct wifi_station *sta,
         bo->bo_chswwrp_trailerlen += chswwrp_len;
         bo->bo_extchanswitch_trailerlen += chswwrp_len;
         bo->bo_appie_buf += chswwrp_len;
+        bo->bo_bcn_end += chswwrp_len;
         os_skb_put(skb, chswwrp_len);
     }
 
+}
+
+void wifi_mac_bcn_country_ie_update(struct wifi_mac *wifimac, struct wifi_mac_beacon_offsets *bo, struct sk_buff *skb)
+{
+    unsigned int delta_len, index, move_len, old_len;
+
+    if (bo == NULL) {
+        AML_PRINT_LOG_ERR("beacon offset pointer is null!\n");
+        return;
+    }
+
+    if (bo->bo_country == NULL) {
+        AML_PRINT_LOG_WRAN("no country ie in beacon!\n");
+        return;
+    }
+
+    old_len = bo->bo_country[1];
+
+    if (wifimac->wm_countryinfo.country_len == bo->bo_country[1]) {
+        memcpy(bo->bo_country, (unsigned char *)&wifimac->wm_countryinfo, wifimac->wm_countryinfo.country_len + 2);
+    } else if (wifimac->wm_countryinfo.country_len > bo->bo_country[1]) {
+        delta_len = wifimac->wm_countryinfo.country_len - bo->bo_country[1];
+        move_len = bo->bo_bcn_end - (bo->bo_country + bo->bo_country[1] + 2);
+        memmove(bo->bo_country + wifimac->wm_countryinfo.country_len + 2, bo->bo_country + bo->bo_country[1] + 2, move_len);
+        memcpy(bo->bo_country, (unsigned char *)&wifimac->wm_countryinfo, wifimac->wm_countryinfo.country_len + 2);
+        os_skb_put(skb, delta_len);
+
+        bo->bo_chanswitch += delta_len;
+        bo->bo_extchanswitch += delta_len;
+        if (bo->bo_erp) {
+            bo->bo_erp += delta_len;
+        }
+
+        if (bo->bo_wme) {
+            bo->bo_wme += delta_len;
+        }
+
+        if (bo->bo_htcap) {
+            bo->bo_htcap += delta_len;
+        }
+
+        if (bo->bo_htinfo) {
+            bo->bo_htinfo += delta_len;
+        }
+
+        if (bo->bo_extcap) {
+            bo->bo_extcap += delta_len;
+        }
+
+        if (bo->bo_obss_scan) {
+            bo->bo_obss_scan += delta_len;
+        }
+
+        if (bo->bo_vhtcap) {
+            bo->bo_vhtcap += delta_len;
+        }
+
+        if (bo->bo_vhtop) {
+            bo->bo_vhtop += delta_len;
+        }
+
+        for (index = 0; index < VENDOR_IE_MAX; index++) {
+            if (bo->bo_vendor_ie[index]) {
+                bo->bo_vendor_ie[index] += delta_len;
+            }
+        }
+
+        bo->bo_ch_sw_wrp += delta_len;
+        bo->bo_appie_buf += delta_len;
+        bo->bo_bcn_end += delta_len;
+    } else if (wifimac->wm_countryinfo.country_len < bo->bo_country[1]) {
+        delta_len = bo->bo_country[1] - wifimac->wm_countryinfo.country_len;
+        move_len = bo->bo_bcn_end - (bo->bo_country + bo->bo_country[1] + 2);
+        memmove(bo->bo_country + wifimac->wm_countryinfo.country_len + 2, bo->bo_country + bo->bo_country[1] + 2, move_len);
+        memcpy(bo->bo_country, (unsigned char *)&wifimac->wm_countryinfo, wifimac->wm_countryinfo.country_len + 2);
+        os_skb_trim(skb, os_skb_get_pktlen(skb) - delta_len);
+
+        bo->bo_chanswitch -= delta_len;
+        bo->bo_extchanswitch -= delta_len;
+        if (bo->bo_erp) {
+            bo->bo_erp -= delta_len;
+        }
+
+        if (bo->bo_wme) {
+            bo->bo_wme -= delta_len;
+        }
+
+        if (bo->bo_htcap) {
+            bo->bo_htcap -= delta_len;
+        }
+
+        if (bo->bo_htinfo) {
+            bo->bo_htinfo -= delta_len;
+        }
+
+        if (bo->bo_extcap) {
+            bo->bo_extcap -= delta_len;
+        }
+
+        if (bo->bo_obss_scan) {
+            bo->bo_obss_scan -= delta_len;
+        }
+
+        if (bo->bo_vhtcap) {
+            bo->bo_vhtcap -= delta_len;
+        }
+
+        if (bo->bo_vhtop) {
+            bo->bo_vhtop -= delta_len;
+        }
+
+        for (index = 0; index < VENDOR_IE_MAX; index++) {
+            if (bo->bo_vendor_ie[index]) {
+                bo->bo_vendor_ie[index] -= delta_len;
+            }
+        }
+
+        bo->bo_ch_sw_wrp -= delta_len;
+        bo->bo_appie_buf -= delta_len;
+        bo->bo_bcn_end -= delta_len;
+    }
+
+    AML_PRINT(AML_LOG_ID_BEACON, AML_LOG_LEVEL_DEBUG,"delta_len:%d, update country code:[%c%c] \n",
+        bo->bo_country[1] - old_len, bo->bo_country[2], bo->bo_country[3]);
+
+    return;
 }
 
 int _wifi_mac_beacon_update(struct wifi_station *sta,
@@ -342,6 +473,7 @@ int _wifi_mac_beacon_update(struct wifi_station *sta,
     {
         unsigned char *frm;
         int center_chan = 0;
+        unsigned char channel_switch_flag = CHANNEL_CONNECT_FLAG | CHANNEL_RESTORE_FLAG;
 
         if (wnet_vif->vm_bandwidth == WIFINET_BWC_WIDTH20)
         {
@@ -369,15 +501,12 @@ int _wifi_mac_beacon_update(struct wifi_station *sta,
 
         if (IS_APSTA_CONCURRENT(aml_wifi_get_con_mode())) {
 
-            if (wnet_vif->csa_target.switch_chan) {
-                switch_chan = wnet_vif->csa_target.switch_chan;
-                if ((switch_chan) && (wnet_vif->vm_curchan)
-                    && (switch_chan->chan_pri_num == wnet_vif->vm_curchan->chan_pri_num)
-                    && (switch_chan->chan_bw == wnet_vif->vm_bandwidth)
-                    && (center_chan == wifi_mac_Mhz2ieee(switch_chan->chan_cfreq1, 0))) {
-
+            if (wnet_vif->csa_target.switch_chan.chan_pri_num != 0) {
+                switch_chan = &(wnet_vif->csa_target.switch_chan);
+                if ((wnet_vif->vm_curchan)
+                    && !memcmp(switch_chan, wnet_vif->vm_curchan, sizeof(struct wifi_channel))) {
                     concurrent_set_channel = 0;//no need set channel again due to bw
-                    wnet_vif->csa_target.switch_chan = NULL;
+                    memset(&(wnet_vif->csa_target.switch_chan) , 0, sizeof(struct wifi_channel));
                 }
             } else {
                 /*no other vmac running, no need set concurrent channel*/
@@ -385,13 +514,13 @@ int _wifi_mac_beacon_update(struct wifi_station *sta,
             }
 
             if (concurrent_set_channel) { /*need think if system want to change channel*/
-                struct wlan_net_vif *main_wnet_vif = wifi_mac_running_main_wnet_vif(wifimac);
                 struct wifi_station *sta_entry = NULL, *next = NULL;
                 struct wifi_station_tbl *nt = &wnet_vif->vm_sta_tbl;
                 int update_band_to_2g = 0;
                 int update_band_to_5g = 0;
                 /*sta connect to 5G ap, softap need update channel/band/mac_mode as  sta*/
                 if (switch_chan) {
+
                     if (wnet_vif->vm_curchan) {
                         if ((wnet_vif->vm_curchan->chan_pri_num >= 36)
                             && (switch_chan->chan_pri_num <= 14)) {
@@ -405,12 +534,6 @@ int _wifi_mac_beacon_update(struct wifi_station *sta,
                     wnet_vif->vm_curchan = switch_chan;
                     wnet_vif->vm_bandwidth = switch_chan->chan_bw;
 
-                    if (main_wnet_vif) {
-                        wnet_vif->vm_mac_mode = main_wnet_vif->vm_mac_mode;
-                    } else if(wnet_vif->vm_p2p->p2p_role == NET80211_P2P_ROLE_GO){
-                        wnet_vif->vm_mac_mode = WIFINET_MODE_11GN;
-                    }
-
                     if (wnet_vif->vm_curchan->chan_bw >= WIFINET_BWC_WIDTH40) {
                         wnet_vif->vm_htcap |= WIFINET_HTCAP_SUPPORTCBW40;
                     }
@@ -423,7 +546,7 @@ int _wifi_mac_beacon_update(struct wifi_station *sta,
                         wnet_vif->scnd_chn_offset = WIFINET_HTINFO_EXTOFFSET_NA;
                     }
 
-                    wifi_mac_set_wnet_vif_channel(wnet_vif, switch_chan->chan_pri_num, switch_chan->chan_bw, wifi_mac_Mhz2ieee(switch_chan->chan_cfreq1, 0));
+                    wifi_mac_set_wnet_vif_channel(wnet_vif, switch_chan->chan_pri_num, switch_chan->chan_bw, wifi_mac_Mhz2ieee(switch_chan->chan_cfreq1, 0),channel_switch_flag);
                     AML_PRINT_LOG_INFO("set ap chan %d, mac mode %d, band %d  slot %d\n ",
                           wnet_vif->vm_curchan->chan_pri_num, wnet_vif->vm_mac_mode, wnet_vif->vm_bandwidth,wifimac->wm_vsdb_slot);
 
@@ -439,16 +562,17 @@ int _wifi_mac_beacon_update(struct wifi_station *sta,
                         }
                     }
 
-                    if (wifimac->wm_vsdb_slot == CONCURRENT_SLOT_P2P) {
-                        /*sta need notify ap*/
-                        wifimac->wm_vsdb_flags |= CONCURRENT_SWITCH_TO_STA_CHANNEL;
-                    }
-
                     if (wifimac->wm_vsdb_slot != CONCURRENT_SLOT_NONE) {
-                        wifi_mac_add_work_task(wifimac, wifi_mac_set_vsdb, NULL,(SYS_TYPE)wifimac, 0, DISABLE, (SYS_TYPE)wnet_vif, 0);
-                        wifimac->wm_vsdb_flags &= CONCURRENT_SWITCH_TO_STA_CHANNEL;
+                        wifi_mac_set_vsdb_task(wifimac, wnet_vif, DISABLE);
                         wifimac->vsdb_mode_set_noa_enable = 0;
-                        wifimac->wm_vsdb_slot = CONCURRENT_SLOT_NONE;
+                        if (wifimac->wm_vsdb_slot == CONCURRENT_SLOT_P2P) {
+                            /*sta need notify ap*/
+                            wifimac->wm_vsdb_flags = CONCURRENT_SWITCH_TO_STA_CHANNEL;
+                        } else {
+                            wifimac->wm_vsdb_flags = 0;
+                            wifimac->wm_vsdb_slot = CONCURRENT_SLOT_NONE;
+                        }
+
                         if (wnet_vif->vm_wdev->iftype == NL80211_IFTYPE_P2P_GO)
                         {
                             if (wnet_vif->vm_p2p->p2p_flag & P2P_OPPPS_START_FLAG_HI)
@@ -462,11 +586,11 @@ int _wifi_mac_beacon_update(struct wifi_station *sta,
                         }
                     }
                     wnet_vif->csa_target.start = 0;
-                    wifi_mac_add_work_task(wifimac, vm_cfg80211_chan_switch_notify_task, NULL, (SYS_TYPE)wifimac, (SYS_TYPE)wnet_vif, 0, (SYS_TYPE)wnet_vif->csa_target.switch_chan, 0);
+                    wifi_mac_add_work_task(wifimac, vm_cfg80211_chan_switch_notify_task, NULL, (SYS_TYPE)wifimac, (SYS_TYPE)wnet_vif, 0, (SYS_TYPE)&(wnet_vif->csa_target.switch_chan), 0);
                 }
             }
         } else {
-            if (wifi_mac_set_wnet_vif_channel(wnet_vif, wifimac->wm_doth_channel, wnet_vif->vm_bandwidth, center_chan) == false)
+            if (wifi_mac_set_wnet_vif_channel(wnet_vif, wifimac->wm_doth_channel, wnet_vif->vm_bandwidth, center_chan,channel_switch_flag) == false)
             {
                 return 0;
             }
@@ -477,12 +601,12 @@ int _wifi_mac_beacon_update(struct wifi_station *sta,
         sta->sta_rates = wnet_vif->vm_legacy_rates;
         sta->sta_htrates = wifimac->wm_sup_ht_rates;
         sta->sta_vhtrates = wifimac->wm_sup_vht_rates;
-        wifi_mac_build_country_ie(wnet_vif);
         wnet_vif->vm_chanchange_count = 0;
         wnet_vif->vm_flags &= ~WIFINET_F_CHANSWITCH;
         wifimac->wm_flags &= ~WIFINET_F_CHANSWITCH;
         wnet_vif->vm_flags &= ~WIFINET_F_DOTH;
         wifimac->wm_flags &= ~WIFINET_F_DOTH;
+        wifi_mac_run_delayed_country_switch(wifimac, WIFINET_REGDOM_PENDING_F_CSA);
         os_skb_pull(skb, sizeof(struct wifi_frame));
         os_skb_trim(skb, 0);
         frm = os_skb_data(skb);
@@ -511,6 +635,11 @@ int _wifi_mac_beacon_update(struct wifi_station *sta,
         capinfo = WIFINET_CAPINFO_IBSS;
     else
         capinfo = WIFINET_CAPINFO_ESS;
+
+    if (is_need_update_country_ie(wifimac)) {
+        wifi_mac_build_country_ie(wnet_vif);
+        wifi_mac_bcn_country_ie_update(wifimac, bo, skb);
+    }
 
     if (wnet_vif->vm_flags & WIFINET_F_PRIVACY)
         capinfo |= WIFINET_CAPINFO_PRIVACY;
@@ -647,6 +776,7 @@ int _wifi_mac_beacon_update(struct wifi_station *sta,
                 bo->bo_ch_sw_wrp += trailer_adjust;
                 bo->bo_wme += trailer_adjust;
                 bo->bo_appie_buf += trailer_adjust;
+                bo->bo_bcn_end += trailer_adjust;
                 if (bo->bo_erp)
                     bo->bo_erp += trailer_adjust;
 
@@ -713,32 +843,30 @@ int _wifi_mac_beacon_update(struct wifi_station *sta,
         WIFINET_BEACON_LOCK(wifimac);
         if ((wifimac->wm_flags & WIFINET_F_DOTH) && (wifimac->wm_flags & WIFINET_F_CHANSWITCH))
         {
-            if (!wnet_vif->csa_target.switch_chan) {
-                wnet_vif->csa_target.switch_chan = wifi_mac_get_main_vmac_channel(wifimac);
-                if (wnet_vif->csa_target.switch_chan == WIFINET_CHAN_ERR) {
-                    wnet_vif->csa_target.switch_chan = wifi_mac_find_chan(wifimac, wifimac->wm_doth_channel, WIFINET_BWC_WIDTH20, wifimac->wm_doth_channel);
-                }
+            if (wnet_vif->csa_target.switch_chan.chan_pri_num == 0) {
+                AML_PRINT_LOG_ERR("ERR channel:%d \n",wnet_vif->csa_target.switch_chan.chan_pri_num);
             }
-            switch_chan = wnet_vif->csa_target.switch_chan;
+            switch_chan = &(wnet_vif->csa_target.switch_chan);
 
             if (((wifimac->wm_vsdb_slot == CONCURRENT_SLOT_P2P) || (wifimac->wm_vsdb_slot == CONCURRENT_SLOT_NONE)) &&
                 !(wnet_vif->csa_target.start)) {
                     wnet_vif->csa_target.start = 1;
-                    wnet_vif->csa_count = CSA_COUNT;
+                    wnet_vif->csa_count = wifimac->wm_doth_tbtt;
                     AML_PRINT(AML_LOG_ID_BEACON, AML_LOG_LEVEL_DEBUG,"channel switch announce start slot:%d \n",wifimac->wm_vsdb_slot);
             }
 
             if (wnet_vif->csa_count > 0) {
                 static struct cfg80211_chan_def chan_def = {0};
-                wifi_mac_get_chandef(switch_chan, &chan_def);
-                wifi_mac_add_work_task(wifimac, wifi_mac_csa_send_action_task, NULL, (SYS_TYPE) wifimac, (SYS_TYPE) wnet_vif, (SYS_TYPE) &chan_def, 0, 0);
+                if (wifi_mac_get_chandef(switch_chan, &chan_def) == true) {
+                    wifi_mac_add_work_task(wifimac, wifi_mac_csa_send_action_task, NULL, (SYS_TYPE) wifimac, (SYS_TYPE) wnet_vif, (SYS_TYPE) &chan_def, 0, 0);
+                }
             }
 
             if (!wnet_vif->vm_chanchange_count && wnet_vif->csa_target.start) {
                 wnet_vif->vm_flags |= WIFINET_F_CHANSWITCH;
                 wifi_mac_beacon_update_csaie(sta, bo, skb, switch_chan);
                 len_changed = 1;
-                wifi_mac_add_work_task(wifimac, vm_cfg80211_chan_switch_notify_task, NULL, (SYS_TYPE)wifimac, (SYS_TYPE)wnet_vif, 1, (SYS_TYPE)wnet_vif->csa_target.switch_chan, 0);
+                wifi_mac_add_work_task(wifimac, vm_cfg80211_chan_switch_notify_task, NULL, (SYS_TYPE)wifimac, (SYS_TYPE)wnet_vif, 1, (SYS_TYPE)&(wnet_vif->csa_target.switch_chan), 0);
             }
             else if (wnet_vif->vm_chanchange_count && wnet_vif->csa_target.start)
             {
@@ -839,6 +967,7 @@ int _wifi_mac_beacon_update(struct wifi_station *sta,
             bo->bo_tim_trailerlen += diff_len;
             bo->bo_chswwrp_trailerlen += diff_len;
             bo->bo_extchanswitch_trailerlen += diff_len;
+            bo->bo_bcn_end += diff_len;
 
             len_changed = 1;
         }
@@ -1006,7 +1135,7 @@ void wifi_mac_process_beacon_miss_ex(SYS_TYPE arg)
     * Actually, we will lost at least 25 beacons here,
     * because 'vm_swbmiss' timeout is 2500ms.
     */
-    if (wnet_vif->vm_bmiss_count++ < WIFINET_BMISS_COUNT_MAX) {
+    if (wnet_vif->vm_bmiss_count++ < wnet_vif->vm_bmiss_max) {
         /* we should wakeup when beacon miss happened */
         if (wifi_mac_pwrsave_is_wnet_vif_sleeping(wnet_vif) == 0) {
             wifi_mac_pwrsave_wakeup(wnet_vif, WKUP_FROM_BCN_MISS);
@@ -1043,9 +1172,12 @@ void wifi_mac_process_beacon_miss_ex(SYS_TYPE arg)
         wnet_vif->vm_chan_roaming_scan_flag = 0;
         wifi_mac_scan_access(wnet_vif);
 
+        if ((wnet_vif->disconnect_info.disconnect_reason != DISCONNECT_UNSUPCHAN)
+            && (wnet_vif->disconnect_info.disconnect_reason != DISCONNECT_DFSCHAN)) {
+            disconenct_info_update(wnet_vif,DISCONNECT_TRIGGER_PASSIVE,DISCONNECT_APLEAVE,0);
+        }
+
         wifi_mac_top_sm(wnet_vif, WIFINET_S_SCAN, 0);
-        if (wifimac->wm_disconnect_code != DISCONNECT_UNSUPCHAN && wifimac->wm_disconnect_code != DISCONNECT_DFSCHAN)
-            wifimac->wm_disconnect_code = DISCONNECT_APLEAVE;
     }
 }
 
@@ -1112,3 +1244,24 @@ void wifi_mac_set_vsdb(SYS_TYPE param1, SYS_TYPE param2,SYS_TYPE param3,
     return ;
 }
 
+void wifi_mac_set_vsdb_task(struct wifi_mac *wifimac, struct wlan_net_vif *wnet_vif, enum VsdbState state)
+{
+    if (wifimac == NULL) {
+        AML_PRINT_LOG_ERR("wifimac is null\n");
+        return;
+    }
+
+    if (wnet_vif == NULL) {
+        AML_PRINT_LOG_ERR("wnet_vif is null\n");
+        return;
+    }
+
+    if ((state >= VSDB_STATE_MAX) || (state < 0) ) {
+        AML_PRINT_LOG_ERR("state:%d  error\n",state);
+        return;
+    }
+
+    wifimac->wm_vsdb_sate = state;
+    AML_PRINT_LOG_INFO("vid:%d, enable:%d\n", wnet_vif->wnet_vif_id, state);
+    wifi_mac_add_work_task(wifimac, wifi_mac_set_vsdb, NULL,(SYS_TYPE)wifimac, 0, state, (SYS_TYPE)wnet_vif, 0);
+}

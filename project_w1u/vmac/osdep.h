@@ -288,7 +288,7 @@ enum ieee80211_band {
 
 #define strnicmp  strncasecmp
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 251)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 251) || ((LINUX_VERSION_CODE > KERNEL_VERSION(5, 4, 292)) && (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)))
 static inline void
 dev_addr_mod(struct net_device *dev, unsigned int offset,
 	     const u8 *addr, size_t len)

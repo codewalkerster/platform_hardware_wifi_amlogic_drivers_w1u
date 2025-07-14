@@ -38,6 +38,8 @@
 
 #define WIFINET_BCNMISS_TIME  (WIFINET_BMISS_THRS * 2)
 
+#define HAL_TX_EMPTY_TIMEOUT    1000
+
 //flag whether to enter sleep after nulldata is transmited completely
 //just send nulldata with ps=1, but not enter sleep when txed. for example, powersave for other intf scanning
 //send nulldata with ps=1 and also enter sleep after txed.

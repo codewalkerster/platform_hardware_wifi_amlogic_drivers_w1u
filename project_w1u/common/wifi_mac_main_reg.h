@@ -45,7 +45,11 @@ typedef union MAC_CONTROL_FIELD
     unsigned int reg_bws_ta_disable : 1;
     unsigned int reg_vht_txtime_sel : 1;
     unsigned int reg_qosnull_notupd_bitmap : 1;
-    unsigned int rsvd_2 : 11;
+    unsigned int rsvd_2 : 3;
+    unsigned int reg_hw_grant_cca_dis : 1;
+    unsigned int reg_autoclr_rxmode_en : 1;
+    unsigned int reg_jic_tx_start : 1;
+    unsigned int rsvd_3 : 5;
   } b;
 } MAC_CONTROL_FIELD_T;
 
@@ -506,7 +510,8 @@ typedef union MAC_CLKJIC1_FIELD
     unsigned int reg_dp_clk_jic : 12;
     unsigned int rsvd_0 : 4;
     unsigned int reg_ahb_clk_jic : 6;
-    unsigned int rsvd_1 : 10;
+    unsigned int rsvd_1 : 2;
+    unsigned int reg_mac_cfg_jic : 8;
   } b;
 } MAC_CLKJIC1_FIELD_T;
 

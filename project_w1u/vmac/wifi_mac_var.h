@@ -348,23 +348,9 @@ enum wifi_roaming_state
     ROAMING_CONNECTING = 2,
 };
 
-enum DisconnectionReasonCode {
-    DISCONNECT_SYSTEM,             ///< Disconnection initiated by higher layer.
-    DISCONNECT_DRVINIT,            ///< Generic Disconnection initiated by Driver.
-    DISCONNECT_NETDEVDOWN,         ///< Disconnection initiated by driver when the network interface is down.
-    DISCONNECT_DFSDETECTION,       ///< Disconnection by Driver when DFS is detected on the serving channel.
-    DISCONNECT_UNSUPCHAN,          ///< Disconnection by Driver when AP switched to an unsupported channel.
-    DISCONNECT_DFSCHAN,            ///< Disconnection by Driver when AP switched to an DFS channel.
-    DISCONNECT_APLEAVE,            ///< Disconnection by Driver when connection to AP is lost.
-    DISCONNECT_APROAMFAIL,         ///< Disconnection by Driver when Roaming Failed.
-    DISCONNECT_RCVDEAUTH,          ///< Disconnection initiated by AP and Deauth Received.
-    DISCONNECT_RCVDISASSOC,        ///< Disconnection initiated by AP and Disassoc Received.
-    DISCONNECT_GENERIC             ///< Uncategorized Disconnection Reasons.
-};
-
 struct chan_switch_target_t {
     unsigned char start;
-    struct wifi_channel *switch_chan;
+    struct wifi_channel switch_chan;
 };
 
 struct wifi_mac_chan_overlapping {
@@ -377,6 +363,12 @@ struct rf_test_recover {
     unsigned int primary_channel_val;
     unsigned int power_tx_val;
     unsigned int packet_type;
+};
+
+enum VsdbState {
+    VSDB_STATE_DISABLE,
+    VSDB_STATE_ENABLE,
+    VSDB_STATE_MAX,
 };
 
 struct wifi_mac
@@ -405,7 +397,7 @@ struct wifi_mac
 
     unsigned char wm_alpha_set_forbid;
     unsigned char wm_alpha_set_in_progress;
-    unsigned char wm_alpha_pending;
+    unsigned int wm_alpha_pending;
     unsigned char wm_alpha_target[3];
     spinlock_t alpha_lock;
     unsigned long alpha_lock_flag;
@@ -434,7 +426,6 @@ struct wifi_mac
     int roaming_threshold_5g;
     int roaming_threshold_2g;
     enum wifi_roaming_state wm_roaming_state;
-    enum DisconnectionReasonCode wm_disconnect_code;
 
     /* 11g rates for p2p GO and vht mode */
     struct wifi_mac_rateset wm_11b_rates;
@@ -474,6 +465,7 @@ struct wifi_mac
 
 #ifdef CONFIG_CONCURRENT_MODE
     struct os_timer_ext wm_concurrenttimer;
+    unsigned char wm_vsdb_sate;
     unsigned char wm_vsdb_slot;
     unsigned short wm_vsdb_flags;
     unsigned long wm_vsdb_switch_time;
@@ -497,6 +489,7 @@ struct wifi_mac
     unsigned char scan_gain_thresh_connect;
     unsigned char scan_max_gain_thresh;
     enum wifi_scan_noise scan_noisy_status;
+    unsigned char scan_num_of_probe_req;
     unsigned char is_connect_set_gain;
     unsigned char force_set_gain;
     unsigned char bt_lk;
@@ -517,7 +510,6 @@ struct wifi_mac
     unsigned short wm_p2p_home_channel;
     unsigned char wm_p2p_connection_protect;
     unsigned long wm_p2p_connection_protect_period;
-    unsigned char is_miracast_connect;
     unsigned char vsdb_mode_set_noa_enable;
 
     struct drv_txdesc *txdesc_bufptr;/* TX descriptors buffer point*/
@@ -567,8 +559,12 @@ struct wifi_mac
     unsigned char cca_thrd_cfg;
     spinlock_t wm_txlist_flush_lock;
     unsigned char txlist_flush_process;
+
     unsigned char tp_pkt_flag;
     unsigned short in_throughput;
+
+    unsigned char wm_pno_sec_mode;
+    unsigned char wm_wake_on_pno;
 };
 
 struct wifi_net_vif_ops
@@ -642,8 +638,16 @@ struct wlan_tp_stat
 
 struct wlan_rxtp_stat
 {
+    unsigned short vm_rx_speed;
+    unsigned long tcp_rx_payload_total;
     unsigned short vm_udp_rx_speed;
     unsigned long udp_rx_payload_total;
+};
+
+struct wlan_rxrate_stat
+{
+    unsigned int aver_rxrate;
+    unsigned long rxpkt_num;
 };
 
 enum
@@ -653,12 +657,41 @@ enum
     TX_STATUS_SUCCESS = BIT(2),
 };
 
-
 struct packet_ctrl {
     unsigned char flag;
     unsigned short frm_seq;
     unsigned int txd_frm_type;
     unsigned char addr[WIFINET_ADDR_LEN];
+};
+
+enum DisconnectionReasonCode{
+    DISCONNECT_SYSTEM,             ///< Disconnection initiated by higher layer.
+    DISCONNECT_DRVINIT,            ///< Generic Disconnection initiated by Driver.
+    DISCONNECT_NETDEVDOWN,         ///< Disconnection initiated by driver when the network interface is down.
+    DISCONNECT_DFSDETECTION,       ///< Disconnection by Driver when DFS is detected on the serving channel.
+    DISCONNECT_UNSUPCHAN,          ///< Disconnection by Driver when AP switched to an unsupported channel.
+    DISCONNECT_DFSCHAN,            ///< Disconnection by Driver when AP switched to a DFS channel.
+    DISCONNECT_APLEAVE,            ///< Disconnection by Driver when connection to AP is lost.
+    DISCONNECT_APROAMFAIL,         ///< Disconnection by Driver when Roaming Failed.
+    DISCONNECT_RCVDEAUTH,          ///< Disconnection initiated by AP and Deauth Received.
+    DISCONNECT_RCVDISASSOC,        ///< Disconnection initiated by AP and Disassoc Received.
+    DISCONNECT_GENERIC,            ///< Uncategorized Disconnection Reasons.
+    DISCONNECT_CONNECTFAIL,        ///< Disconnection during connection
+};
+
+
+enum DisconnctionTrigger{
+    DISCONNECT_TRIGGER_RESERVED,
+    DISCONNECT_TRIGGER_ACTIVE,
+    DISCONNECT_TRIGGER_PASSIVE
+};
+
+struct disconnect_info
+{
+    unsigned long time;
+    enum DisconnctionTrigger trigger;
+    enum DisconnectionReasonCode disconnect_reason;
+    unsigned char wifi_spec_code;
 };
 
 struct wlan_net_vif
@@ -671,6 +704,7 @@ struct wlan_net_vif
     struct vlan_group *vm_vlgrp;
     struct wireless_dev *vm_wdev;
     struct proc_dir_entry *vm_proc;
+    struct wlan_net_vif *another_vif;
 
     struct wifi_station *vm_mainsta;
     struct wifi_mac_statistic vif_sts;
@@ -689,6 +723,7 @@ struct wlan_net_vif
     struct wifi_mac_ScanSSID vm_des_ssid[IV_SSID_SCAN_AMOUNT];
     unsigned char vm_des_bssid[WIFINET_ADDR_LEN];
     unsigned char vm_myaddr[WIFINET_ADDR_LEN];
+    struct wifi_channel *vm_des_channel;
     unsigned char vm_des_nssid;
     unsigned char vm_auth_shared_cap;
     unsigned char vm_auth_alg_switch;
@@ -760,7 +795,10 @@ struct wlan_net_vif
 
     /* for change channel when sta receive a channel change announce frame*/
     unsigned char vm_chanchange_count;
+    /*for beacon miss*/
     unsigned char vm_bmiss_count;
+    unsigned char vm_bmiss_max;
+    unsigned int vm_wifi_link_secords;
     struct wifi_mac_rateset vm_legacy_rates;
     struct chan_switch_target_t csa_target;
     struct wifi_mac_wmm_ac_params vm_wmm_ac_params;
@@ -779,6 +817,7 @@ struct wlan_net_vif
     struct sk_buff_head vm_forward_buffer_queue;
     struct wifi_mac_forward vm_forward;
     enum hal_op_mode vm_hal_opmode;
+    unsigned int vm_ipv4;
 #ifdef  AML_MCAST_QUEUE
     int vm_mqueue_flag_send;
 #endif
@@ -824,7 +863,7 @@ struct wlan_net_vif
 
     struct wlan_tp_stat txtp_stat;
     struct wlan_rxtp_stat rxtp_stat;
-    unsigned short vm_rx_speed;
+    struct wlan_rxrate_stat rxrate_stat;
     unsigned char vm_change_rate_enable;
     unsigned long long pn_window[2][2];
     struct packet_ctrl pkt_ctrl;
@@ -839,6 +878,12 @@ struct wlan_net_vif
     unsigned char csa_count;
     unsigned int  regulatory_flags;
     unsigned char vm_connecting_retry_cnt;
+    struct disconnect_info disconnect_info;
+
+#ifdef PNO_SUPPORT
+    sched_scan_ptr sched_scan_req;
+    unsigned char sched_scan_en;
+#endif
 };
 
 #define WIFINET_PSQUEUE_PS4QUIET 0x0001

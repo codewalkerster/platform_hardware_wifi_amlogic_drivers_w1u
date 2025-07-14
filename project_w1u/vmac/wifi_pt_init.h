@@ -200,6 +200,7 @@ struct _B2B_Test_Case_Packet{
     unsigned char ldpc_enable;
     unsigned int  channel;
     unsigned int pkt_length;
+    unsigned char mpdu_num;
 };
 
 extern struct _TRC_CONF_MIB TrcConfMib;

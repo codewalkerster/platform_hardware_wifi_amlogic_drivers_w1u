@@ -654,7 +654,7 @@ int minstrel_rate_index_to_vendor_rate_code(int minstrel_rate_idx, struct ieee80
         return WIFINET_RATE_MCS + minstrel_rate_idx;
 
     } else {
-        if (band == IEEE80211_BAND_5GHZ) {
+        if (band == IEEE80211_BAND_5GHZ && IS_CCK_RATE(minstrel_rate_idx)) {
             /*because 5G band haven't 11b rate ,so need plus 4*/
             return minstrel_rate_idx += 4;
 

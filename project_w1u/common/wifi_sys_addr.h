@@ -16,6 +16,7 @@
 #include "wifi_adda_addr.h"
 #include "chip_ana_reg.h"
 #include "chip_pmu_reg.h"
+#include "wifi_phy_dsss_reg.h"
 
 #endif
 

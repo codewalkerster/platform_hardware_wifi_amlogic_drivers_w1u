@@ -91,5 +91,7 @@ int wifi_mac_send_arp_req(struct wlan_net_vif *wnet_vif);
 int wifi_mac_set_arp_rsp(struct wlan_net_vif *wnet_vif) ;
 int wifi_mac_handle_csa(struct wlan_net_vif *wnet_vif, struct wifi_station *sta, int chan);
 int wifi_mac_csa_handle_timeout(void *arg);
+int wifi_mac_is_spec_frm(struct wifi_station *sta, struct sk_buff *skb ,struct wifi_mac_rx_status *rs);
+int wifi_mac_spec_frm_decap(struct wlan_net_vif *wnet_vif, struct sk_buff *skb, int hdrlen);
 
 #endif

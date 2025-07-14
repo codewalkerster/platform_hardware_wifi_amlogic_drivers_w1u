@@ -487,6 +487,7 @@ unsigned int vm_wfd_add_assocrsp_ie(struct wifi_mac_p2p *p2p, unsigned char *frm
 unsigned int vm_wfd_add_assocreq_ie(struct wifi_mac_p2p *p2p, unsigned char *frm);
 unsigned int vm_wfd_add_beacon_ie(struct wifi_mac_p2p *p2p, unsigned char *frm);
 unsigned int vm_wfd_add_ie(struct wlan_net_vif *wnet_vif,const unsigned char *frm, unsigned int len);
+bool vm_p2p_miracast_active(struct wifi_mac *wifimac);
 int vm_p2p_update_noa_count_start (struct wifi_mac_p2p *p2p);
 unsigned char * vm_p2p_get_p2pie_attrib_with_id (void *frm, unsigned char element_id);
 unsigned char *vm_p2p_get_p2pie_noa_ie(struct wifi_mac_p2p *p2p ,const unsigned char *frm, unsigned int *len);

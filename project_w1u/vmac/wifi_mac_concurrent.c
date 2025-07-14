@@ -1,6 +1,49 @@
 #include "wifi_mac_com.h"
 
 #ifdef  CONFIG_CONCURRENT_MODE
+
+int p2p_home_channel_switch( struct wifi_mac *wifimac)
+{
+#ifdef CONFIG_ROKU
+    struct drv_private *drv_priv = NULL;
+    struct wlan_net_vif *p2p_wnet_vif = NULL;
+    struct wlan_net_vif *main_wnet_vif = NULL;
+    struct wifi_channel *switch_chan = NULL;
+
+    if (wifimac == NULL) {
+        AML_PRINT_LOG_ERR("wifimac is NULL\n");
+        return -1;
+    }
+
+    drv_priv = wifimac->drv_priv;
+    p2p_wnet_vif = drv_priv->drv_wnet_vif_table[NET80211_P2P_VMAC];
+    main_wnet_vif = drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC];
+
+    if (!(wifimac->wm_recovery_flags & WIFINET_RECOVERY_F_RUNNING)
+        && IS_APSTA_CONCURRENT(aml_wifi_get_con_mode())
+        && (main_wnet_vif->vm_state != WIFINET_S_CONNECTED)
+        && (p2p_wnet_vif->vm_opmode == WIFINET_M_HOSTAP)
+        && (p2p_wnet_vif->vm_state == WIFINET_S_CONNECTED)) {
+
+        AML_PRINT_LOG_INFO("channel switch to p2p_home_channel[%d]\n",wifimac->wm_p2p_home_channel);
+
+        if (wifi_mac_if_dfs_channel(wifimac, p2p_wnet_vif->vm_curchan->chan_pri_num)) {
+            if (wifi_mac_p2p_home_channel_enabled(p2p_wnet_vif)) {
+                switch_chan = wifi_mac_find_chan(wifimac, wifimac->wm_p2p_home_channel, WIFINET_BWC_WIDTH20, wifimac->wm_p2p_home_channel);
+            } else {
+                if (if_southamerica_country(wifimac->wm_country.iso)) {
+                    switch_chan = wifi_mac_find_chan(wifimac,149, WIFINET_BWC_WIDTH20, 149);
+                } else {
+                    switch_chan = wifi_mac_find_chan(wifimac,36, WIFINET_BWC_WIDTH20, 36);
+                }
+            }
+        }
+        channel_switch_announce_trigger(wifimac, switch_chan);
+    }
+#endif
+    return 0;
+}
+
 void concurrent_vsdb_init(struct wifi_mac *wifimac)
 {
     wifimac->wm_vsdb_slot = CONCURRENT_SLOT_NONE;
@@ -42,35 +85,42 @@ int concurrent_change_channel_timeout(void * data)
     AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_INFO, "\n" );
 
     wifimac->wm_p2p_connection_protect = 0;
-    WIFI_ALPHA_LOCK(wifimac);
-    wifi_mac_run_delayed_country_switch(wifimac);
-    WIFI_ALPHA_UNLOCK(wifimac);
+    wifi_mac_run_delayed_country_switch(wifimac, WIFINET_REGDOM_PENDING_F_P2P_CON);
     wifi_mac_add_work_task(wifimac, concurrent_change_channel_timeout_ex,NULL,(SYS_TYPE)data,0,0,0,0 );
     return OS_TIMER_NOT_REARMED;
 }
 
-void concurrent_channel_restore(int target_channel, struct wlan_net_vif *wnet_vif, int times)
+void concurrent_channel_protect_timer_cancel(struct wlan_net_vif *wnet_vif)
 {
     struct wifi_mac *wifimac = wnet_vif->vm_wmac;
-    struct wifi_channel *main_vmac_chan = NULL;
 
-    AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "\n");
-
-    main_vmac_chan = wifi_mac_get_main_vmac_channel(wifimac);
-    if ((main_vmac_chan != WIFINET_CHAN_ERR) && (times != 0))
-    {
-        os_timer_ex_start_period(&wifimac->wm_concurrenttimer, times);
+    if (os_timer_ex_active(&wifimac->wm_concurrenttimer)) {
+        AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_INFO, "\n" );
+        os_timer_ex_cancel(&wifimac->wm_concurrenttimer, CANCEL_SLEEP);
+        concurrent_change_channel_timeout(wifimac);
     }
 }
 
-void concurrent_channel_protection(struct wlan_net_vif *wnet_vif, int times)
+void concurrent_channel_protect_timer_start(struct wlan_net_vif *wnet_vif, int times)
 {
     struct wifi_mac *wifimac = wnet_vif->vm_wmac;
 
-    AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "wm_p2p_connection_protect_period:%d\n", times);
+    AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "protect_time:%d\n", times);
 
     wifimac->wm_p2p_connection_protect = 1;
-    wifimac->wm_p2p_connection_protect_period = jiffies + times * HZ / 1000;
+
+    os_timer_ex_cancel(&wifimac->wm_concurrenttimer, CANCEL_SLEEP);
+    os_timer_ex_start_period(&wifimac->wm_concurrenttimer, times);
+}
+void concurrent_channel_protect_period_update(struct wlan_net_vif *wnet_vif, int times)
+{
+    struct wifi_mac *wifimac = wnet_vif->vm_wmac;
+
+    if (os_timer_ex_active(&wifimac->wm_concurrenttimer)) {
+        AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "period:%d\n", times);
+        os_timer_ex_cancel(&wifimac->wm_concurrenttimer, CANCEL_SLEEP);
+        os_timer_ex_start_period(&wifimac->wm_concurrenttimer, times);
+    }
 }
 
 static void concurrent_vsdb_do_channel_change_ex(SYS_TYPE param1,
@@ -132,6 +182,12 @@ static void concurrent_vsdb_change_channel_ex(SYS_TYPE param1,
 
     AML_PRINT(AML_LOG_ID_CONNECT, AML_LOG_LEVEL_DEBUG, "slot:%d\n", wifimac->wm_vsdb_slot);
 
+    if (wifimac->wm_vsdb_sate == VSDB_STATE_DISABLE) {
+        AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_INFO, "slot:%d flag:%x\n", wifimac->wm_vsdb_slot, wifimac->wm_vsdb_flags);
+        wifimac->wm_vsdb_flags &= ~CONCURRENT_CHANNEL_SWITCH;
+        return;
+    }
+
     if ((wifimac->wm_nrunning > 1) && (wifimac->wm_vsdb_flags & CONCURRENT_CHANNEL_SWITCH)) {
         if (wifimac->wm_vsdb_slot == CONCURRENT_SLOT_STA) {
             wifi_mac_scan_notify_leave_or_back(main_vmac, 1);
@@ -173,6 +229,15 @@ void concurrent_vsdb_prepare_change_channel(struct wifi_mac *wifimac)
     struct wifi_mac_scan_state *ss = wifimac->wm_scan;
     struct drv_private *drv_priv = wifimac->drv_priv;
     struct wlan_net_vif *p2p_vmac = drv_priv->drv_wnet_vif_table[NET80211_P2P_VMAC];
+
+    AML_PRINT_LOG_INFO("vm_nruning:%d slot:%d vsdb_flag:%x p2p_role:%d noa_enable:%d nego_state:%d\n",wifimac->wm_nrunning,
+                    wifimac->wm_vsdb_slot,wifimac->wm_vsdb_flags,p2p_vmac->vm_p2p->p2p_role,wifimac->vsdb_mode_set_noa_enable,
+                    p2p_vmac->vm_p2p->p2p_negotiation_state);
+
+    if (wifimac->wm_vsdb_sate == VSDB_STATE_DISABLE) {
+        AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_INFO, "slot:%d flag:%x\n", wifimac->wm_vsdb_slot, wifimac->wm_vsdb_flags);
+        return;
+    }
 
     if ((wifimac->wm_nrunning > 1 && wifimac->wm_vsdb_slot == CONCURRENT_SLOT_P2P && p2p_vmac->vm_p2p->p2p_role == NET80211_P2P_ROLE_GO) ||
         (wifimac->wm_vsdb_slot == CONCURRENT_SLOT_STA && wifimac->vsdb_mode_set_noa_enable == 1)) {
@@ -236,6 +301,21 @@ unsigned char concurrent_check_is_vmac_same_pri_channel(struct wifi_mac *wifimac
     }
 }
 
+unsigned char concurrent_check_is_vmac_same_channel(struct wifi_mac *wifimac)
+{
+    struct drv_private *drv_priv = wifimac->drv_priv;
+    struct wlan_net_vif *main_vmac = drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC];
+    struct wlan_net_vif *p2p_vmac = drv_priv->drv_wnet_vif_table[NET80211_P2P_VMAC];
+
+    AML_PRINT(AML_LOG_ID_P2P, AML_LOG_LEVEL_DEBUG, "\n");
+
+    if ((main_vmac->vm_curchan == WIFINET_CHAN_ERR) || (p2p_vmac->vm_curchan == WIFINET_CHAN_ERR)) {
+        return 1;
+    } else {
+        return (main_vmac->vm_curchan == p2p_vmac->vm_curchan);
+    }
+}
+
 unsigned char concurrent_check_vmac_is_AP(struct wifi_mac *wifimac)
 {
     struct drv_private *drv_priv = wifimac->drv_priv;
@@ -282,32 +362,48 @@ struct wlan_net_vif *wifi_mac_running_wnet_vif(struct wifi_mac *wifimac)
     return NULL;
 }
 
-void channel_switch_announce_trigger(struct wifi_mac *wifimac, unsigned int chan_pri_num, enum wifi_mac_bwc_width bandwidth, unsigned int center_chan) {
-    unsigned int delay_ms = 0;
+void channel_switch_announce_trigger(struct wifi_mac *wifimac, struct wifi_channel *switch_chan) {
+    unsigned int delay_ms = 0, csa_count = 0;
     struct drv_private *drv_priv = wifimac->drv_priv;
     struct wlan_net_vif *p2p_wnet_vif = drv_priv->drv_wnet_vif_table[NET80211_P2P_VMAC];
+
+    if (switch_chan == NULL) {
+        AML_PRINT_LOG_ERR("switch channel is null !\n");
+        return;
+    }
+
+    if (switch_chan->chan_pri_num == 0) {
+        AML_PRINT_LOG_ERR("ERR chan_pri_num!\n");
+        return;
+    }
 
     while ((wifimac->wm_flags & WIFINET_F_DOTH) && (wifimac->wm_flags & WIFINET_F_CHANSWITCH) && delay_ms < 1000) {
         mdelay(1);
         delay_ms++;
     }
 
-    if (p2p_wnet_vif->vm_curchan && (p2p_wnet_vif->vm_curchan->chan_pri_num == chan_pri_num) && (p2p_wnet_vif->vm_curchan->chan_bw == bandwidth)) {
-        AML_PRINT_LOG_WRAN("channel[%d] bandwidth[%d] switch not trigger! \n",chan_pri_num, bandwidth);
+    if (p2p_wnet_vif->vm_curchan
+        && (p2p_wnet_vif->vm_curchan->chan_pri_num == switch_chan->chan_pri_num)
+        && (p2p_wnet_vif->vm_curchan->chan_bw == switch_chan->chan_bw)) {
+        AML_PRINT_LOG_WRAN("channel[%d] bandwidth[%d] switch not trigger! \n",switch_chan->chan_pri_num, switch_chan->chan_bw);
         return;
     }
 
-    if (wifi_mac_find_chan(wifimac, chan_pri_num, bandwidth, center_chan) == NULL) {
-        AML_PRINT_LOG_ERR("channel[%d] bandwidth[%d]  center_chan[%d] not support !\n",chan_pri_num, bandwidth, center_chan);
-        return;
+    if ((p2p_wnet_vif->vm_dtim_period > 0) && (p2p_wnet_vif->vm_dtim_period < 5)) {
+        csa_count = p2p_wnet_vif->vm_dtim_period;
+    } else {
+        csa_count = CSA_COUNT;
     }
 
-    AML_PRINT(AML_LOG_ID_BEACON, AML_LOG_LEVEL_INFO,"chan_pri_num:%d, delay_ms:%d\n",chan_pri_num,delay_ms);
+    AML_PRINT(AML_LOG_ID_BEACON, AML_LOG_LEVEL_INFO,"chan_pri_num:%d bw:%d csa_count:%d delay_ms:%d\n",
+        switch_chan->chan_pri_num, switch_chan->chan_bw, csa_count, delay_ms);
+
     if (IS_APSTA_CONCURRENT(aml_wifi_get_con_mode()) && concurrent_check_vmac_is_AP(wifimac)) {
         p2p_wnet_vif->vm_wmac->wm_flags |= WIFINET_F_DOTH;
         p2p_wnet_vif->vm_wmac->wm_flags |= WIFINET_F_CHANSWITCH;
-        p2p_wnet_vif->vm_wmac->wm_doth_channel = chan_pri_num;
-        p2p_wnet_vif->vm_wmac->wm_doth_tbtt = CSA_COUNT;
+        p2p_wnet_vif->vm_wmac->wm_doth_channel = switch_chan->chan_pri_num;
+        p2p_wnet_vif->vm_wmac->wm_doth_tbtt = csa_count;
+        p2p_wnet_vif->csa_target.switch_chan = *switch_chan;
         if (p2p_wnet_vif->vm_p2p->go_hidden_mode) {
             p2p_wnet_vif->vm_flags &= ~WIFINET_F_HIDESSID;
         }

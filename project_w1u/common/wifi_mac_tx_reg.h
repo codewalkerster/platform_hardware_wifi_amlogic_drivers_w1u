@@ -1350,7 +1350,7 @@ typedef union MAC_TXVECTOR_OFFSET_SEL_FIELD
     unsigned int reg_tx_pn_swcal : 1;
     unsigned int reg_tx_iv_incr_mode : 1;
     unsigned int rsvd_1 : 2;
-    unsigned int reg_fiac_latch_ctrl : 32;
+    unsigned int reg_fiac_latch_ctrl : 1;
     unsigned int rsvd_2 : 7;
   } b;
 } MAC_TXVECTOR_OFFSET_SEL_FIELD_T;

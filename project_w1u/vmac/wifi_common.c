@@ -368,8 +368,11 @@ int storeFwlogToFile(u8 *buf, u32 sz)
     uint64_t remain = 0;
     uint64_t div_value_s = 0;
     uint64_t div_value_ms = 0;
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0))
+    div_value_s = div_u64_rem(curTime.tv64, 1000000000, &remain);
+#else
     div_value_s = div_u64_rem(curTime, 1000000000, &remain);
+#endif
     div_value_ms = div64_u64(remain, 1000);
 
     sprintf(time_record_buff, "\n<%lld.%lld>:\n", div_value_s, div_value_ms); //record system time eg:<xx.xx s>

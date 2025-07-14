@@ -1274,14 +1274,14 @@ unsigned char if_southamerica_country(unsigned char *countrycode) {
     return 0;
 }
 
-void wifi_mac_get_chandef(struct wifi_channel *vmac_chan, struct cfg80211_chan_def *chandef)
+bool wifi_mac_get_chandef(struct wifi_channel *vmac_chan, struct cfg80211_chan_def *chandef)
 {
     unsigned int index = 0;
 
     if (vmac_chan == WIFINET_CHAN_ERR)
     {
         AML_PRINT_LOG_ERR("vmac_chan is WIFINET_CHAN_ERR\n");
-        return ;
+        return false;
     }
 
     if (vmac_chan->chan_pri_num >= 1 && vmac_chan->chan_pri_num <=14 )
@@ -1296,6 +1296,11 @@ void wifi_mac_get_chandef(struct wifi_channel *vmac_chan, struct cfg80211_chan_d
         }
     }
 
+    if (!chandef->chan) {
+        AML_PRINT_LOG_ERR("not find ieee chan pri_num:%d\n", vmac_chan->chan_pri_num);
+        return false;
+    }
+
     if (vmac_chan->chan_bw == WIFINET_BWC_WIDTH20) {
         chandef->width = NL80211_CHAN_WIDTH_20;
     } else if (vmac_chan->chan_bw == WIFINET_BWC_WIDTH40) {
@@ -1308,7 +1313,7 @@ void wifi_mac_get_chandef(struct wifi_channel *vmac_chan, struct cfg80211_chan_d
 
     chandef->center_freq1 = vmac_chan->chan_cfreq1;
 
-    return;
+    return true;
 }
 
 u8 wifi_mac_get_operation_class(struct cfg80211_chan_def chandef)
@@ -1626,7 +1631,7 @@ void  wifi_mac_select_chan_from_global(int country_code, int sub_set[], int num,
                         chn_idx_20M = global_chan_set[j].chan_sub_set[k].chan_pri_num;
 
                         if (hash_20M[chn_idx_20M] == 0) {
-                            memcpy(wifimac->wm_channels + channel_num++, &global_chan_set[j].chan_sub_set[k], sizeof(struct wifi_channel));
+                            memcpy(wifimac->wm_new_channels + channel_num++, &global_chan_set[j].chan_sub_set[k], sizeof(struct wifi_channel));
                             hash_20M[chn_idx_20M]++;
                         }
 
@@ -1635,12 +1640,12 @@ void  wifi_mac_select_chan_from_global(int country_code, int sub_set[], int num,
 
                         if (hash_40M[chn_idx_40M][0] == -1) {
                             if (hash_40M[chn_idx_40M][1] == -1) {
-                                memcpy(wifimac->wm_channels + channel_num++, &global_chan_set[j].chan_sub_set[k], sizeof(struct wifi_channel));
+                                memcpy(wifimac->wm_new_channels + channel_num++, &global_chan_set[j].chan_sub_set[k], sizeof(struct wifi_channel));
                                 hash_40M[chn_idx_40M][1] = channel_num - 1;
 
                             } else if (hash_40M[chn_idx_40M][1] != -1) {
-                                if (wifimac->wm_channels[hash_40M[chn_idx_40M][1]].chan_cfreq1 != global_chan_set[j].chan_sub_set[k].chan_cfreq1) {
-                                    memcpy(wifimac->wm_channels + channel_num++, &global_chan_set[j].chan_sub_set[k], sizeof(struct wifi_channel));
+                                if (wifimac->wm_new_channels[hash_40M[chn_idx_40M][1]].chan_cfreq1 != global_chan_set[j].chan_sub_set[k].chan_cfreq1) {
+                                    memcpy(wifimac->wm_new_channels + channel_num++, &global_chan_set[j].chan_sub_set[k], sizeof(struct wifi_channel));
                                     hash_40M[chn_idx_40M][0]++;//40M finish
                                 }
                             }
@@ -1650,7 +1655,7 @@ void  wifi_mac_select_chan_from_global(int country_code, int sub_set[], int num,
                         chn_idx_80M = global_chan_set[j].chan_sub_set[k].chan_pri_num;
 
                         if (hash_80M[chn_idx_80M] == 0) {
-                            memcpy(wifimac->wm_channels + channel_num++, &global_chan_set[j].chan_sub_set[k], sizeof(struct wifi_channel));
+                            memcpy(wifimac->wm_new_channels + channel_num++, &global_chan_set[j].chan_sub_set[k], sizeof(struct wifi_channel));
                             hash_80M[chn_idx_80M]++;
                         }
                     }
@@ -1668,7 +1673,7 @@ void  wifi_mac_select_chan_from_global(int country_code, int sub_set[], int num,
             if (target_country->con_add_chan_info.con_add_chan[chan_index].chan_bw == WIFINET_BWC_WIDTH20) {
                 chn_idx_20M =target_country->con_add_chan_info.con_add_chan[chan_index].chan_pri_num;
                 if (hash_20M[chn_idx_20M] == 0) {
-                    memcpy(wifimac->wm_channels + channel_num++, &target_country->con_add_chan_info.con_add_chan[chan_index], sizeof(struct wifi_channel));
+                    memcpy(wifimac->wm_new_channels + channel_num++, &target_country->con_add_chan_info.con_add_chan[chan_index], sizeof(struct wifi_channel));
                     hash_20M[chn_idx_20M]++;
                 }
 
@@ -1677,12 +1682,12 @@ void  wifi_mac_select_chan_from_global(int country_code, int sub_set[], int num,
 
                 if (hash_40M[chn_idx_40M][0] == -1) {
                     if (hash_40M[chn_idx_40M][1] == -1) {
-                        memcpy(wifimac->wm_channels + channel_num++, &target_country->con_add_chan_info.con_add_chan[chan_index], sizeof(struct wifi_channel));
+                        memcpy(wifimac->wm_new_channels + channel_num++, &target_country->con_add_chan_info.con_add_chan[chan_index], sizeof(struct wifi_channel));
                         hash_40M[chn_idx_40M][1] = channel_num - 1;
 
                     } else if (hash_40M[chn_idx_40M][1] != -1) {
-                        if (wifimac->wm_channels[hash_40M[chn_idx_40M][1]].chan_cfreq1 != target_country->con_add_chan_info.con_add_chan[chan_index].chan_cfreq1) {
-                            memcpy(wifimac->wm_channels + channel_num++, &target_country->con_add_chan_info.con_add_chan[chan_index], sizeof(struct wifi_channel));
+                        if (wifimac->wm_new_channels[hash_40M[chn_idx_40M][1]].chan_cfreq1 != target_country->con_add_chan_info.con_add_chan[chan_index].chan_cfreq1) {
+                            memcpy(wifimac->wm_new_channels + channel_num++, &target_country->con_add_chan_info.con_add_chan[chan_index], sizeof(struct wifi_channel));
                             hash_40M[chn_idx_40M][0]++;//40M finish
                         }
                     }
@@ -1691,7 +1696,7 @@ void  wifi_mac_select_chan_from_global(int country_code, int sub_set[], int num,
             } else if (target_country->con_add_chan_info.con_add_chan[chan_index].chan_bw == WIFINET_BWC_WIDTH80) {
                 chn_idx_80M =target_country->con_add_chan_info.con_add_chan[chan_index].chan_pri_num;
                 if (hash_80M[chn_idx_80M] == 0) {
-                    memcpy(wifimac->wm_channels + channel_num++, &target_country->con_add_chan_info.con_add_chan[chan_index], sizeof(struct wifi_channel));
+                    memcpy(wifimac->wm_new_channels + channel_num++, &target_country->con_add_chan_info.con_add_chan[chan_index], sizeof(struct wifi_channel));
                     hash_80M[chn_idx_80M]++;
                 }
             }
@@ -1699,8 +1704,8 @@ void  wifi_mac_select_chan_from_global(int country_code, int sub_set[], int num,
     }
     AML_PRINT_LOG_INFO("add chan:%d del_chan:%d nchan:%d\n", add_chan_cnt, del_chan_cnt, channel_num);
 #endif
-    wifimac->wm_nchans = channel_num;
-    wifi_mac_chan_order(wifimac->wm_channels, 0, wifimac->wm_nchans - 1);
+    wifimac->wm_new_nchans = channel_num;
+    wifi_mac_chan_order(wifimac->wm_new_channels, 0, wifimac->wm_new_nchans - 1);
 
 #if 0
     AML_PRINT_LOG_INFO("wifimac->wm_nchans:%d\n", wifimac->wm_nchans);
@@ -1722,22 +1727,22 @@ void wifi_mac_mark_dfs_channel_ex(int country_code, struct wifi_mac *wifimac, in
 
     /* if chan mun==0 mark all dfs channel*/
     if (chan_num == 0) {
-        for (i = 0; i < wifimac->wm_nchans; i++) {
-            chan_pri_num = wifimac->wm_channels[i].chan_pri_num;
+        for (i = 0; i < wifimac->wm_new_nchans; i++) {
+            chan_pri_num = wifimac->wm_new_channels[i].chan_pri_num;
             if (((IS_5G_BAND1(chan_pri_num)) && (dfs_chan_flag & DFS_5G_B1))
                 || ((IS_5G_BAND2(chan_pri_num)) && (dfs_chan_flag & DFS_5G_B2))
                 || ((IS_5G_BAND3(chan_pri_num)) && (dfs_chan_flag & DFS_5G_B3))
                 || ((IS_5G_BAND4(chan_pri_num)) && (dfs_chan_flag & DFS_5G_B4))
                 || ((chan_pri_num >= 12 && chan_pri_num <= 14) && (dfs_chan_flag & PASSIVE_2G_12_14))) {
 //                AML_PRINT_LOG_INFO("mark channel %d \n", chan_pri_num);
-                wifimac->wm_channels[i].chan_flags |= WIFINET_CHAN_DFS;
+                wifimac->wm_new_channels[i].chan_flags |= WIFINET_CHAN_DFS;
             }
         }
     } else {
-        for (i = 0; i <  wifimac->wm_nchans; i++) {
-            if (wifimac->wm_channels[i].chan_pri_num == chan_num) {
+        for (i = 0; i <  wifimac->wm_new_nchans; i++) {
+            if (wifimac->wm_new_channels[i].chan_pri_num == chan_num) {
 //                AML_PRINT_LOG_INFO("mark channel %d \n",wifimac->wm_channels[i].chan_pri_num);
-                wifimac->wm_channels[i].chan_flags |= WIFINET_CHAN_DFS;
+                wifimac->wm_new_channels[i].chan_flags |= WIFINET_CHAN_DFS;
             }
         }
     }
@@ -1812,8 +1817,8 @@ void  wifi_mac_update_chan_list_by_country(int country_code, int support_opt[], 
         AML_PRINT_LOG_ERR("input is NULL!!!\n");
     }
 
-    memset(wifimac->wm_channels, 0, sizeof(struct wifi_channel) * (WIFINET_CHAN_MAX * 2 + 1));
-    wifimac->wm_nchans = 0;
+    memset(wifimac->wm_new_channels, 0, sizeof(struct wifi_channel) * (WIFINET_CHAN_MAX * 2 + 1));
+    wifimac->wm_new_nchans = 0;
 
     wifi_mac_select_chan_from_global(country_code, support_opt, support_num,wifimac);
     wifi_mac_mark_dfs_channel_ex(country_code, wifimac, 0);
@@ -1919,6 +1924,7 @@ struct wifi_channel * wifi_mac_find_chan(struct wifi_mac *wifimac, int chan, int
             return c;
         }
     }
+    AML_PRINT(AML_LOG_ID_BWC,AML_LOG_LEVEL_WARN, "chan=%d, bw=%d cntr chan=%d not find\n", chan, bw ,center_chan);
     WIFI_CHANNEL_UNLOCK(wifimac);
     return NULL;
 }
@@ -2003,20 +2009,20 @@ int wifi_mac_recv_bss_intol_channelCheck(struct wifi_mac *wifimac, struct wifi_m
     return false;
 }
 
-struct wifi_channel * wifi_mac_scan_sta_get_ap_channel(struct wlan_net_vif *wnet_vif, struct wifi_mac_scan_param *sp)
+struct wifi_channel * wifi_mac_scan_sta_get_ap_channel(struct wlan_net_vif *wnet_vif,
+    unsigned char chan, unsigned char *htinfoie, unsigned char *htcapie, unsigned char *vht_optie)
 {
-    unsigned char *htinfoie = sp->htinfo;
-    unsigned char *htcapie = sp->htcap;
-    unsigned char chan = sp->chan;
-    struct wifi_mac_ie_htinfo *xhtinfo = (struct wifi_mac_ie_htinfo*)htinfoie;
     struct wifi_mac_ie_htcap *xhtcap =(struct wifi_mac_ie_htcap *)htcapie;
+    struct wifi_mac_ie_htinfo *xhtinfo = (struct wifi_mac_ie_htinfo*)htinfoie;
+    struct wifi_mac_ie_vht_opt *vht_opt_ie = (struct wifi_mac_ie_vht_opt *)vht_optie;
+
     struct wifi_mac_ie_htcap_cmn *htcap = NULL;
-    int htcapval = 0;
     struct wifi_mac_ie_htinfo_cmn *htinfo = NULL;
-    struct wifi_mac *wifimac = wnet_vif->vm_wmac;
-    struct wifi_mac_ie_vht_opt *vht_opt_ie =  (struct wifi_mac_ie_vht_opt *)sp->vht_opt;
+
+    int htcapval = 0;
     int center_chan = 0, bw = 0;
     static struct wifi_channel *apchan =NULL;
+    struct wifi_mac *wifimac = wnet_vif->vm_wmac;
 
     if (xhtinfo != NULL)
     {
@@ -2028,8 +2034,8 @@ struct wifi_channel * wifi_mac_scan_sta_get_ap_channel(struct wlan_net_vif *wnet
         htcapval = le16toh(htcap->hc_cap);
     }
 
-    AML_PRINT(AML_LOG_ID_BWC,AML_LOG_LEVEL_DEBUG, "%s, chan %d htinfo %p,chwidth %x, htcapval 0x%x \n",
-        ssidie_sprintf(sp->ssid), sp->chan, htinfo, htinfo?htinfo->hi_txchwidth : 0, htcapval);
+    AML_PRINT(AML_LOG_ID_BWC,AML_LOG_LEVEL_DEBUG, "chan %d htinfo %p,chwidth %x, htcapval 0x%x \n",
+        chan, htinfo, htinfo?htinfo->hi_txchwidth : 0, htcapval);
 
     if ((htinfo != NULL) && (htinfo->hi_txchwidth == WIFINET_HTINFO_TXWIDTH_2040))
     {
@@ -2146,37 +2152,39 @@ int wifi_mac_chan_overlapping_map_init(struct wifi_mac *wifimac)
     return 0;
 }
 
-void wifi_mac_chan_setup(void * ieee, unsigned int wMode, int countrycode_ex)
+void wifi_mac_new_chan_setup(struct wifi_mac *wifimac, int cc_ex)
 {
-    struct wifi_mac *wifimac = NET80211_HANDLE(ieee);
     int *support_ptr = NULL;
     int support_num = 0;
     int support_index = 0;
+
+    support_index = country_chan_mapping_list[cc_ex].chplan;
+    support_num = country_chan_plan_list[support_index].support_class_num;
+    support_ptr = country_chan_plan_list[support_index].support_class;
+    AML_PRINT_LOG_INFO("country code 0x%x, support num %d\n", cc_ex, support_num);
+    wifi_mac_update_chan_list_by_country(cc_ex,support_ptr, support_num, wifimac);
+}
+
+void wifi_mac_chan_setup(void * ieee, unsigned int wMode, int countrycode_ex)
+{
+    struct wifi_mac *wifimac = NET80211_HANDLE(ieee);
     int i =0;
 
-    if (IS_REGD_USE_DB()) {
-        if (wifimac->wm_new_nchans == 0) {
-            return;
-        }
+    WIFI_NEW_CHANNEL_LOCK(wifimac);
+    if (!IS_REGD_USE_DB() && wifimac->wm_new_nchans == 0) {
+        wifi_mac_new_chan_setup(wifimac, countrycode_ex);
+    }
 
-        WIFI_NEW_CHANNEL_LOCK(wifimac);
-        {
-            memset(wifimac->wm_channels, 0x00, sizeof(wifimac->wm_channels));
-            memcpy(wifimac->wm_channels, wifimac->wm_new_channels, sizeof(wifimac->wm_channels));
-            wifimac->wm_nchans = wifimac->wm_new_nchans;
-            AML_PRINT_LOG_INFO("country code 0x%x, %d channels copied\n", countrycode_ex, wifimac->wm_new_nchans);
-        }
+    if (wifimac->wm_new_nchans > 0) {
+        memset(wifimac->wm_channels, 0x00, sizeof(wifimac->wm_channels));
+        memcpy(wifimac->wm_channels, wifimac->wm_new_channels, sizeof(wifimac->wm_channels));
+        wifimac->wm_nchans = wifimac->wm_new_nchans;
+        AML_PRINT_LOG_INFO("country code 0x%x, %d channels copied\n", countrycode_ex, wifimac->wm_new_nchans);
 
         memset(wifimac->wm_new_channels, 0x00, sizeof(wifimac->wm_new_channels));
         wifimac->wm_new_nchans = 0;
-        WIFI_NEW_CHANNEL_UNLOCK(wifimac);
-    } else {
-        support_index = country_chan_mapping_list[countrycode_ex].chplan;
-        support_num = country_chan_plan_list[support_index].support_class_num;
-        support_ptr = country_chan_plan_list[support_index].support_class;
-        AML_PRINT_LOG_INFO("country code 0x%x, support num %d\n", countrycode_ex, support_num);
-        wifi_mac_update_chan_list_by_country(countrycode_ex,support_ptr, support_num, wifimac);
     }
+    WIFI_NEW_CHANNEL_UNLOCK(wifimac);
 
     for(i= 0; i < wifimac->wm_nchans; i++) {
         chan_dbg(&wifimac->wm_channels[i], "chan info", __LINE__);
@@ -2223,8 +2231,9 @@ void wifi_mac_set_wnet_vif_chan_ex(SYS_TYPE param1,SYS_TYPE param2, SYS_TYPE par
     struct wifi_mac *wifimac = (struct wifi_mac * )param1;
     struct wifi_channel *wnet_vif_chan = (struct wifi_channel * )param2;
     struct wlan_net_vif *wnet_vif = (struct wlan_net_vif *)param3;
+    unsigned char channel_switch_flag = (unsigned char)param4;
 
-    wifi_mac_ChangeChannel(wifimac, wnet_vif_chan, CHANNEL_CONNECT_FLAG | CHANNEL_RESTORE_FLAG, wnet_vif->wnet_vif_id);
+    wifi_mac_ChangeChannel(wifimac, wnet_vif_chan, channel_switch_flag, wnet_vif->wnet_vif_id);
 }
 
 struct wifi_channel * wifi_mac_get_wm_chan (struct wifi_mac *wifimac)
@@ -2240,7 +2249,8 @@ struct wifi_channel * wifi_mac_get_wm_chan (struct wifi_mac *wifimac)
     }
 }
 
-int wifi_mac_set_wnet_vif_channel(struct wlan_net_vif *wnet_vif,  int chan, int bw, int center_chan)
+int wifi_mac_set_wnet_vif_channel(struct wlan_net_vif *wnet_vif,  int chan,
+                                 int bw, int center_chan, unsigned char switch_flag)
 {
     struct wifi_mac *wifimac = wnet_vif->vm_wmac;
     struct wifi_channel * c = NULL;
@@ -2251,12 +2261,12 @@ int wifi_mac_set_wnet_vif_channel(struct wlan_net_vif *wnet_vif,  int chan, int 
     if (c == NULL) {
         AML_PRINT_LOG_ERR("WARNING<%s>can't support set this channel, chan %d, bw %d, c_chan %d\n",
             (wnet_vif)->vm_ndev->name, chan, bw, center_chan);
-        wifimac->wm_disconnect_code = DISCONNECT_UNSUPCHAN;
+        disconenct_info_update(wnet_vif,DISCONNECT_TRIGGER_PASSIVE,DISCONNECT_UNSUPCHAN,0);
         return false;
     }
     if (c->chan_flags & WIFINET_CHAN_DFS && !g_DFS_on) {
         AML_PRINT_LOG_INFO(" dfs channel on[%d] \n",g_DFS_on);
-        wifimac->wm_disconnect_code = DISCONNECT_DFSCHAN;
+        disconenct_info_update(wnet_vif,DISCONNECT_TRIGGER_PASSIVE,DISCONNECT_DFSCHAN,0);
         return false;
     }
 
@@ -2266,7 +2276,7 @@ int wifi_mac_set_wnet_vif_channel(struct wlan_net_vif *wnet_vif,  int chan, int 
          c->chan_pri_num, c->chan_cfreq1, c->chan_flags);
 
     wifi_mac_add_work_task(wnet_vif->vm_wmac, wifi_mac_set_wnet_vif_chan_ex, NULL,
-        (SYS_TYPE)(wnet_vif->vm_wmac), (SYS_TYPE)c, (SYS_TYPE)wnet_vif, 0, 0);
+        (SYS_TYPE)(wnet_vif->vm_wmac), (SYS_TYPE)c, (SYS_TYPE)wnet_vif, (SYS_TYPE)switch_flag, 0);
     return true;
 }
 

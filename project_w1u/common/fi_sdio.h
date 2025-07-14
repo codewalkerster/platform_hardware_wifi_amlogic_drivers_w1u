@@ -31,9 +31,14 @@
 #define PHY_AGC_BUSY_FSM          (PHY_REG_AGC_BASE+0x34)
 #define DF_AGC_REG_A12 (PHY_REG_AGC_BASE + 0x30)
 #define DF_AGC_REG_A14 (PHY_REG_AGC_BASE + 0x38) //agc
+
 #define DF_AGC_REG_A27 (PHY_REG_AGC_BASE + 0x6c)
 #define DF_AGC_REG_A29 (PHY_REG_AGC_BASE + 0x74)
 #define DF_AGC_REG_A30 (PHY_REG_AGC_BASE + 0x78)//for ANT loss cfg
+#define DF_AGC_REG_A154 (PHY_REG_AGC_BASE + 0x268)
+#define DF_AGC_REG_A155 (PHY_REG_AGC_BASE + 0x26c)
+#define DF_AGC_REG_A156 (PHY_REG_AGC_BASE + 0x270)
+
 #define REG_STF_AC_Q_THR (PHY_REG_AGC_BASE + 0x5c)
 #define REG_ED_THR_DB (PHY_REG_AGC_BASE + 0x74)
 
@@ -733,6 +738,7 @@ enum fw_event_type
   FWLOG_PRINT_EVENT,
   ZGB_EXIST_EVENT,
   WOW_WAKE_EVENT,
+  COEX_EVENT,
 };
 
 struct fw_event_basic_info
@@ -881,6 +887,8 @@ typedef struct OtherTxPage
 #define RX_PHY_WEP128  5
 #pragma pack(1)
 
+#define SW_UPDATE_RSSI_FLAG  BIT(0)
+#define SW_UPDATE_SNR_FLAG   BIT(1)
 #define RX_PRIV_HDR_LEN  sizeof(HW_RxDescripter_bit)
 typedef struct HW_RxDescripter_bit
 {

@@ -100,5 +100,4 @@ void wifi_mac_is_queues_full(struct wlan_net_vif * wnet_vif);
 void wifi_mac_wake_queues(struct wlan_net_vif * wnet_vif);
 int wifi_mac_csa_send_action(struct wifi_mac *wifimac, struct wlan_net_vif *wnet_vif, struct wifi_station *sta, struct cfg80211_chan_def chan_def);
 void wifi_mac_csa_send_action_task(SYS_TYPE param1,SYS_TYPE param2, SYS_TYPE param3,SYS_TYPE param4,SYS_TYPE param5);
-
 #endif

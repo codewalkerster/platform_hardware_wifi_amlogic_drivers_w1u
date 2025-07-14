@@ -183,6 +183,7 @@ extern void sdio_read_write(int idx, int addr, svBitPackedArrRef buff, int len, 
     extern unsigned char (*host_wake_req)(void);
     extern int (*host_suspend_req)(struct device* device);
     extern int (*host_resume_req)(struct device* device);
+    extern int (*pre_suspend_wifi)(void);
     extern void aml_wifi_sdio_power_lock(void);
     extern void aml_wifi_sdio_power_unlock(void);
     #define AML_W1_WIFI_POWER_ON 1
@@ -191,6 +192,7 @@ extern void sdio_read_write(int idx, int addr, svBitPackedArrRef buff, int len, 
     #define BT_POWER_CHANGE_SHIFT 0
     #define WIFI_POWER_CHANGE_SHIFT 1
 
+    int aml_sdio_pm_pre_suspend(void);
     int aml_sdio_pm_suspend(struct device *device);
     int aml_sdio_pm_resume(struct device *device);
 #endif

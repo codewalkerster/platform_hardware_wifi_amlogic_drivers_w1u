@@ -12,15 +12,17 @@
 
 unsigned char if_southamerica_country(unsigned char *countrycode);
 void wifi_mac_update_country_chan_list(struct wifi_mac *wifimac);
+void wifi_mac_new_chan_setup(struct wifi_mac *wifimac, int cc_ex);
 void wifi_mac_chan_setup(void * ieee, unsigned int wMode, int countrycode_ex);
 int wifi_mac_chan_attach(struct wifi_mac *wifimac);
 int wifi_mac_chan_overlapping_map_init(struct wifi_mac *wifimac);
 unsigned char wifi_mac_chan_num_avail (struct wifi_mac *wifimac, unsigned char channum);
 int wifi_mac_recv_bss_intol_channelCheck(struct wifi_mac *wifimac, struct wifi_mac_ie_intolerant_report *intol_ie);
-struct wifi_channel * wifi_mac_scan_sta_get_ap_channel(struct wlan_net_vif *wnet_vif, struct wifi_mac_scan_param *sp);
+struct wifi_channel * wifi_mac_scan_sta_get_ap_channel(struct wlan_net_vif *wnet_vif,
+    unsigned char chan, unsigned char *htinfoie, unsigned char *htcapie, unsigned char *vht_optie);
 unsigned int wifi_mac_mhz2chan(unsigned int freq);
 struct wifi_channel * wifi_mac_find_chan(struct wifi_mac *wifimac, int chan, int bw, int center_chan);
-int wifi_mac_set_wnet_vif_channel(struct wlan_net_vif *wnet_vif,  int chan, int bw, int center_chan);
+int wifi_mac_set_wnet_vif_channel(struct wlan_net_vif *wnet_vif,  int chan, int bw, int center_chan,unsigned char switch_flag);
 void wifi_mac_set_wnet_vif_chan_ex(SYS_TYPE param1,SYS_TYPE param2,SYS_TYPE param3, SYS_TYPE param4,SYS_TYPE param5);
 struct wifi_channel * wifi_mac_get_wm_chan (struct wifi_mac *wifimac);
 struct wifi_channel * wifi_mac_get_connect_wnet_vif_channel(struct wlan_net_vif *wnet_vif);
@@ -44,7 +46,7 @@ int update_tx_power_band(int tx_power_plan, unsigned short pwr_value[]);
 int wifi_mac_find_80M_channel_center_chan(int chan);
 unsigned char wifi_mac_set_p2p_home_chan(struct wifi_mac *wifimac, unsigned short channel);
 unsigned char wifi_mac_p2p_home_channel_enabled(struct wlan_net_vif *wnet_vif);
-void wifi_mac_get_chandef(struct wifi_channel *vmac_chan, struct cfg80211_chan_def *chandef);
+bool wifi_mac_get_chandef(struct wifi_channel *vmac_chan, struct cfg80211_chan_def *chandef);
 u8 wifi_mac_get_operation_class(struct cfg80211_chan_def chandef);
 
 #endif//__NET80211_CHAN_H__

@@ -6,10 +6,6 @@ use File::Basename;
 my $dirname    = dirname(__FILE__);
 my $output     = "print_version.c";
 
-if (!-d "../firmware" && -f $output) {
-    exit 0;
-}
-
 my ($sec,$min,$hour,$day,$mon,$year,$weekday,$yeardate,$savinglightday) = (localtime(time));
 $sec   =  ($sec  <   10)? "0$sec":$sec;
 $min   =  ($min  <   10)? "0$min":$min;
@@ -46,7 +42,7 @@ if ($rf_commit =~ m/commit (.*)/){
   $rf_hash = $1;
 }
 
-open OUTPUT, ">", "$output" or die "open $output err: $!";
+open OUTPUT, ">", "$output" or die "open $output fail";
 
 print OUTPUT "#include \"wifi_hal_com.h\"\n\n";
 print OUTPUT "void print_driver_version(void) {\n";

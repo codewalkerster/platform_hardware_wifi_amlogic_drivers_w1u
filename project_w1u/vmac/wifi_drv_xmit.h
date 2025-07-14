@@ -35,7 +35,7 @@ enum
 int aml_tx_hal_buffer_full(struct drv_private *drv_priv, unsigned char queue_id,int txaggrneed,int txprivneed);
 void drv_txlist_task(struct drv_private *drv_priv, struct drv_txlist *txlist);
 int drv_tx_get_mgmt_frm_rate(struct drv_private *drv_priv, enum wifi_mac_macmode mac_mode, unsigned char fc_type,
-    unsigned char *rate, unsigned short *flag);
+    unsigned char *rate, unsigned short *flag,unsigned char is_last);
 
 unsigned int drv_txlist_qcnt(struct drv_private *drv_priv, int);
 void drv_txdesc_set_rts_cts(struct drv_private *drv_priv, struct drv_txdesc *ptxdesc);
@@ -85,11 +85,11 @@ void drv_addba_req_setup(struct drv_private *drv_priv, void *, unsigned char tid
 void drv_addba_rsp_process(struct drv_private *drv_priv, void *,
     unsigned short statuscode, struct wifi_mac_ba_parameterset *baparamset, unsigned short batimeout);
 void drv_addba_clear(struct drv_private *drv_priv, void *);
+unsigned char tx_get_rate_index(struct aml_ratecontrol ratectrl[]);
 
 unsigned short drv_addba_status(struct drv_private *drv_priv, void * nsta, unsigned char tid_index);
 void drv_txrxampdu_del(struct drv_private *drv_priv, void * nsta, unsigned char tid_index, unsigned char initiator);
 void drv_txampdu_del(struct drv_private *drv_priv, struct aml_driver_nsta *drv_sta, unsigned char tid_index);
-int drv_rate_findindex_from_ratecode(const struct drv_rate_table *rt, int vendor_rate_code);
 int drv_get_amsdu_supported(struct drv_private *drv_priv, void * nsta, int tid_index);
 
 int drv_hal_tx_frm_pause(struct drv_private *drv_priv, int pause);

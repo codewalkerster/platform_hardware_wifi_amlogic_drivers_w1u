@@ -191,14 +191,12 @@ void get_phy_stc_info(unsigned int *arr)
     unsigned int noise_floor = 0;
 
     unsigned int reg_tmp = 0x01;
-    unsigned int gated_clock = 0;
     struct hw_interface* hif = hif_get_hw_interface();
 
     /*gated clock enable date backup*/
-    gated_clock = hif->hif_ops.hi_read_word(PHY_REG_AGC_BASE);
+    // gated_clock = hif->hif_ops.hi_read_word(PHY_REG_AGC_BASE);
     /*gated clock enable*/
-    hif->hif_ops.hi_write_word(PHY_REG_AGC_BASE, gated_clock|BIT(9));
-
+    // hif->hif_ops.hi_write_word(PHY_REG_AGC_BASE, gated_clock|BIT(9));
     hif->hif_ops.hi_write_word(RG_PHY_ADR_2C20, reg_tmp);
 
     udelay(320);
@@ -208,7 +206,7 @@ void get_phy_stc_info(unsigned int *arr)
     }
     noise_floor = hif->hif_ops.hi_read_word(RG_AGC_OB_ANT_NFLOOR);
 
-    hif->hif_ops.hi_write_word(PHY_REG_AGC_BASE, gated_clock);
+    // hif->hif_ops.hi_write_word(PHY_REG_AGC_BASE, gated_clock);
 
     trig_num[0] = reg[0] & 0xffff;
     trig_num[1] = (reg[0] >> 16) & 0xffff;

@@ -1245,6 +1245,26 @@ unsigned int vm_wfd_add_ie(struct wlan_net_vif *wnet_vif,
     return (len+wfdielen);
 }
 
+bool vm_p2p_miracast_active(struct wifi_mac *wifimac)
+{
+    unsigned int vmac_id = 0;
+    struct wifi_station *sta = NULL;
+    struct wifi_station *sta_next = NULL;
+    struct wifi_station_tbl *sta_tbl = NULL;
+
+    for (vmac_id = 0; vmac_id < WIFI_MAX_VID; vmac_id++)
+    {
+        sta_tbl = &wifimac->drv_priv->drv_wnet_vif_table[vmac_id]->vm_sta_tbl;
+        list_for_each_entry_safe(sta, sta_next, &sta_tbl->nt_nsta, sta_list) {
+            if (sta->miracast_active == 1) {
+                AML_PRINT(AML_LOG_ID_P2P, AML_LOG_LEVEL_DEBUG,"sta:%p miracast active\n", sta);
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
 
 #endif //CONFIG_WFD
  int vm_p2p_bsschan_in_chanList(struct wifi_mac_p2p *p2p,
@@ -1750,7 +1770,7 @@ vm_change_p2pie_go_intent(struct wifi_mac_p2p *p2p, const unsigned char *frm, un
 unsigned char *vm_p2p_get_p2pie_attrib(const void *frm, unsigned char element_id)
 {
     struct wifi_mac_p2p_ie *ie = NULL;
-    unsigned short len = 0;
+    int len = 0;
     unsigned char *subel;
     unsigned char subelt_id;
     unsigned short subelt_len;
@@ -1765,6 +1785,12 @@ unsigned char *vm_p2p_get_p2pie_attrib(const void *frm, unsigned char element_id
     ie = (struct wifi_mac_p2p_ie*) frm;
     len = ie->len;
 
+    if (len < 4 )
+    {
+        AML_PRINT_LOG_ERR("Invalid p2p ie\n");
+        return NULL;
+    }
+
     subel = ie->subelts;
     len -= 4;
 
@@ -1776,6 +1802,12 @@ unsigned char *vm_p2p_get_p2pie_attrib(const void *frm, unsigned char element_id
 
         subelt_len = *subel++;
         subelt_len |= *subel++ << 8;
+
+        if (subelt_len > len -2)
+        {
+            AML_PRINT_LOG_ERR("Subelement length (%d) bigger than remaining length (%d)\n", subelt_len, len);
+            break;
+        }
 
         len -= 2;
         len -= subelt_len;
@@ -2234,7 +2266,6 @@ int vm_p2p_parse_negotiation_frames(struct wifi_mac_p2p *p2p,
     char *printbuf = NULL;
     int buflen = 0;
     unsigned char p2p_action_type = 0xff;
-    struct wifi_mac *wifimac = p2p->wnet_vif->vm_wmac;
 
     p2p_pub_act = (struct wifi_mac_p2p_pub_act_frame *)(frm + sizeof(struct wifi_frame));
     p2p_act = (struct wifi_mac_p2p_action_frame *)(frm + sizeof(struct wifi_frame));
@@ -2271,7 +2302,6 @@ int vm_p2p_parse_negotiation_frames(struct wifi_mac_p2p *p2p,
     }
 
     if (p2p_action_type != 0xff) {
-        wifimac->is_miracast_connect = 0;
         vm_p2p_switch_nego_state(p2p, p2p_pub_act, tx, len);
 
         switch (p2p_action_type) {
@@ -2466,9 +2496,7 @@ void vm_p2p_cancel_remain_channel(struct wifi_mac_p2p *p2p )
 
     if (p2p->wnet_vif->vm_wmac->wm_p2p_connection_protect) {
         p2p->wnet_vif->vm_wmac->wm_p2p_connection_protect = 0;
-        WIFI_ALPHA_LOCK(p2p->wnet_vif->vm_wmac);
-        wifi_mac_run_delayed_country_switch(p2p->wnet_vif->vm_wmac);
-        WIFI_ALPHA_UNLOCK(p2p->wnet_vif->vm_wmac);
+        wifi_mac_run_delayed_country_switch(p2p->wnet_vif->vm_wmac, WIFINET_REGDOM_PENDING_F_P2P_CON);
     }
 }
 
