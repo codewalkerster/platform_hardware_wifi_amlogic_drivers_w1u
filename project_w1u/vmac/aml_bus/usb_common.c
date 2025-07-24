@@ -538,10 +538,10 @@ EXPORT_SYMBOL(bt_rd_ptr);
 EXPORT_SYMBOL(aml_pci_read_for_bt);
 EXPORT_SYMBOL(aml_pci_write_for_bt);
 EXPORT_SYMBOL(g_wifi_pm);
+EXPORT_SYMBOL(g_bt_shutdown_func);
 //module_init(aml_common_insmod);
 //module_exit(aml_common_rmmod);
 //MODULE_LICENSE("GPL");
 #endif
 EXPORT_SYMBOL(wifi_usb_access);
 EXPORT_SYMBOL(g_lp_shutdown_func);
-EXPORT_SYMBOL(g_bt_shutdown_func);

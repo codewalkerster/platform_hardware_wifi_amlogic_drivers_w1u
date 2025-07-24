@@ -4059,8 +4059,43 @@ int iw_standard_get_essid(struct net_device *dev, struct iw_request_info *info,
     return 0;
 }
 
-int aml_get_wireless_stats(struct net_device *dev, struct iw_request_info *info,
+int iw_standard_get_stats(struct net_device *dev, struct iw_request_info *info,
     union iwreq_data *wrqu, char *extra)
+{
+    struct iw_quality *qual = &(wrqu->qual);
+    struct wlan_net_vif *wnet_vif = netdev_priv(dev);
+    struct wifi_mac *wifimac = wnet_vif->vm_wmac;
+    struct iw_statistics *wstats = &wnet_vif->vm_iwstats;
+    enum nl80211_iftype iftype;
+
+    list_for_each_entry(wnet_vif, &wifimac->wm_wnet_vifs, vm_next) {
+        if (wnet_vif->vm_ndev == NULL || !(wnet_vif->vm_ndev->flags & IFF_RUNNING)) {
+             continue;
+        }
+
+        iftype = wnet_vif->vm_wdev->iftype;
+
+        if (iftype == NL80211_IFTYPE_STATION) {
+            if (wnet_vif->vm_mainsta && wnet_vif->vm_state == WIFINET_S_CONNECTED) {
+                qual->qual = wnet_vif->vm_mainsta->sta_avg_bcn_snr;
+                qual->level = wnet_vif->vm_mainsta->sta_avg_bcn_rssi;
+                qual->noise = wifi_mac_cal_noise(wnet_vif->vm_mainsta->sta_avg_bcn_rssi,wnet_vif->vm_mainsta->sta_avg_bcn_snr);
+                qual->updated = IW_QUAL_ALL_UPDATED | IW_QUAL_DBM;
+            }
+            else
+            {
+                qual->qual = 0;
+                qual->level = 0;
+                qual->noise = 0;
+                qual->updated = IW_QUAL_ALL_UPDATED | IW_QUAL_DBM;
+            }
+        }
+    }
+
+    return 0;
+}
+
+static struct iw_statistics *aml_get_wireless_stats(struct net_device *dev)
 {
     struct wlan_net_vif *wnet_vif = netdev_priv(dev);
     struct wifi_mac *wifimac = wnet_vif->vm_wmac;
@@ -4090,7 +4125,7 @@ int aml_get_wireless_stats(struct net_device *dev, struct iw_request_info *info,
         }
     }
 
-    return 0;
+    return wstats;
 }
 
 int iw_standard_get_freq(struct net_device *dev, struct iw_request_info *info,
@@ -4273,7 +4308,7 @@ int iw_standard_set_pwr(struct net_device *dev, struct iw_request_info *info,
 }
 
 static const iw_handler standard_handler[] = {
-    IW_HANDLER(SIOCGIWSTATS,    (iw_handler)aml_get_wireless_stats),
+    IW_HANDLER(SIOCGIWSTATS,    (iw_handler)iw_standard_get_stats),
     IW_HANDLER(SIOCSIWFREQ,     (iw_handler)iw_standard_sap_set_freq),
     IW_HANDLER(SIOCSIWPOWER,    (iw_handler)iw_standard_set_pwr),
     IW_HANDLER(SIOCGIWNAME,    (iw_handler)iw_standard_get_name),
