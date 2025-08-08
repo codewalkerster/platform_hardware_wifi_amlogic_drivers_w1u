@@ -6,6 +6,10 @@ use File::Basename;
 my $dirname    = dirname(__FILE__);
 my $output     = "print_version.c";
 
+if (!-d "../firmware" && -f $output) {
+    exit 0;
+}
+
 my ($sec,$min,$hour,$day,$mon,$year,$weekday,$yeardate,$savinglightday) = (localtime(time));
 $sec   =  ($sec  <   10)? "0$sec":$sec;
 $min   =  ($min  <   10)? "0$min":$min;
