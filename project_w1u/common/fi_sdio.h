@@ -115,6 +115,7 @@
 
 #ifdef DHCP_OFFLOAD
 #define RX_TMP_MAX_LEN  512
+#define RX_OFFLOAD_FRMAE_MAX_LEN 512
 #else
 #define RX_TMP_MAX_LEN  256
 #endif
@@ -739,6 +740,7 @@ enum fw_event_type
   ZGB_EXIST_EVENT,
   WOW_WAKE_EVENT,
   COEX_EVENT,
+  MDNS_UP_MDNS_ADDR_EVENT,
 };
 
 struct fw_event_basic_info
@@ -1098,5 +1100,28 @@ typedef struct RekeyDataCmd
 #define WOW_FILTER_OPTION_4WAYHS BIT(4)
 #define WOW_FILTER_OPTION_DISCONNECT BIT(5)
 #define WOW_FILTER_OPTION_GTK_ERROR BIT(6)
+
+
+
+// MDNS_RAW_DATA_LENGTH_MAX + machdr + llc + iphdr + udp should be less than NX_TXFRAME_LEN
+#define MDNS_RAW_DATA_LENGTH_MAX    492
+//#if MDNS_RAW_DATA_LENGTH_MAX > NX_TXFRAME_LEN
+//#error "length illegal"
+//#endif
+#define MDNS_REPLY_DATA_LENGTH_MAX (MDNS_RAW_DATA_LENGTH_MAX + 100)
+
+/// the maximum number of Answer RRs every response data
+#define MDNS_LIST_CRITERIA_MAX      8
+/// the maximum length of domain name defineded in fw is 80.
+/// the maximum length of domain name is 255, the subdomain is 63
+/// reference: https://www.rfc-editor.org/rfc/rfc1035.html (2.3.4.Size limits)
+#define MDNS_QNAME_LENGTH_MAX       80
+/// The maximum number of passthrough that can be added
+#define MDNS_PASSTHROUGH_MAX        4
+/// The maximum number of response data that can be added
+#define MDNS_DATA_MAX 3
+/// The len of a label in mdns name
+#define MDNS_NAME_LABL_LEN_MAX 63
+
 #endif// _FI_AHB_H
 

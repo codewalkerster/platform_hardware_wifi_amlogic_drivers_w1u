@@ -15,8 +15,6 @@ struct amlw1_hwif_sdio g_w1_hwif_sdio;
 struct amlw1_hif_ops g_w1_hif_ops;
 struct aml_hif_sdio_ops g_hif_sdio_ops;
 
-unsigned char recovery_notify_bt = 0;
-unsigned char recovery_done = 1;
 unsigned char g_sdio_wifi_bt_alive;
 unsigned char g_sdio_driver_insmoded;
 unsigned char g_sdio_after_porbe;
@@ -861,9 +859,12 @@ int aml_sdio_probe(struct sdio_func *func, const struct sdio_device_id *id)
 {
     int ret = 0;
     static struct sdio_func sdio_func_0;
+    struct device *dev = &func->dev;
 
     sdio_claim_host(func);
     ret = sdio_enable_func(func);
+
+
     if (ret)
         goto sdio_enable_error;
 
@@ -891,6 +892,8 @@ int aml_sdio_probe(struct sdio_func *func, const struct sdio_device_id *id)
         return 0;
     }
     printk("%s: %d, sdio probe success\n", __func__, __LINE__);
+
+    dev->power.async_suspend = 0;
 
     aml_w1_sdio_init_ops();
     return ret;
@@ -929,6 +932,7 @@ static int aml_sdio_pm_suspend(struct device *device)
 {
     int ret = 0;
 
+    printk("start sdio pm suspend \n");
     if (g_sdio_in_suspend == 0 && pre_suspend_wifi != NULL && pre_suspend_wifi() != 0) {
         printk("%s suspend fail\n", __func__);
         return -1;
@@ -1366,7 +1370,7 @@ void aml_sdio_read_mem(unsigned char *buf, unsigned char *addr, SYS_TYPE len)
         printk("aml_sdio_read_mem, func_base, old:0x%x, new:0x%x\n", g_aml_sdio_func7_base, (unsigned int)addr & 0xfffe0000);
         g_aml_sdio_func7_base = (unsigned int)addr & 0xfffe0000;
     }
-    //printk("aml_sdio_read_mem, buf:0x%s, addr:0x%x, len:0x%x\n", buf, addr, len);
+    //printk("aml_sdio_read_mem, buf:0x%x, addr:0x%x, len:0x%x\n", buf, addr, len);
     aml_w1_sdio_bottom_read(SDIO_FUNC7, (SYS_TYPE)addr & SDIO_ADDR_MASK, buf, len,
                             (len > 8 ? SDIO_OPMODE_INCREMENT : SDIO_OPMODE_FIXED));
     aml_sdio_func7_unlock();
@@ -1529,8 +1533,6 @@ void aml_sdio_rmmod(void)
     aml_sdio_exit();
 }
 
-EXPORT_SYMBOL(recovery_notify_bt);
-EXPORT_SYMBOL(recovery_done);
 EXPORT_SYMBOL(wifi_irq_enable);
 EXPORT_SYMBOL(aml_sdio_insmod);
 EXPORT_SYMBOL(aml_sdio_rmmod);
@@ -1557,5 +1559,6 @@ EXPORT_SYMBOL(aml_priv_to_func);
 EXPORT_SYMBOL(g_sdio_reset_work);
 #endif
 EXPORT_SYMBOL(pre_suspend_wifi);
+EXPORT_SYMBOL(g_sdio_in_suspend);
 
 

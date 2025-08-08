@@ -231,6 +231,9 @@ wifi_mac_wmm_chanparams(struct wlan_net_vif *wnet_vif,
 #define OVERLAPPING_5G_GIAN_THRESHOLD 10
 #define DEFAULT_NUM_OF_PROBE_REQ 2
 
+#define AMLWL_IPV4    1
+#define AMLWL_IPV6    2
+
 struct  ether_header
 {
     u_char  ether_dhost[MAC_ADDR_LEN];
@@ -441,6 +444,7 @@ void wifi_mac_connect_repair_task(SYS_TYPE param1,SYS_TYPE param2, SYS_TYPE para
 int aml_request_recovery(enum wifi_mac_recovery_source src);
 unsigned char wifi_mac_need_chip_reset(void);
 void wifi_mac_filter_special_data_frame(struct sk_buff *skb, SPECIAL_FRAME_STATUS_E frame_status);
+void aml_bt_request_recovery(void);
 
 extern void cca_thrd_cfg_change_task(SYS_TYPE param1, SYS_TYPE param2,SYS_TYPE param3, SYS_TYPE param4,SYS_TYPE param5);
 void wifi_mac_set_fwlog_ex(SYS_TYPE param1,SYS_TYPE param2,

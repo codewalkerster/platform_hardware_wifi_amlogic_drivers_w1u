@@ -138,7 +138,11 @@ void hal_dpd_memory_download(void);
 void hal_dpd_calibration(void);
 void hal_get_fwlog(void);
 int hal_calc_block_in_mpdu (int mpdulen);
-unsigned int hal_read_efuse_val(unsigned int efuse_addr);
+unsigned int hal_read_efuse(unsigned int efuse_addr);
+void hal_write_efuse(unsigned int efuse_addr, unsigned int efuse_val);
 unsigned short hal_get_tx_page_total_num(void);
 int hal_download_offload_fw(void);
+void hal_write_mem(unsigned char *buf, unsigned int dest_addr, unsigned int len);
+void hal_read_mem(unsigned char *buf, unsigned int src_addr, unsigned int len);
+
 #endif

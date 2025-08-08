@@ -332,7 +332,7 @@ struct reg_table
 
 ///< Common signature of task handlers.
 typedef void (*WorkHandler)(SYS_TYPE param1,SYS_TYPE param2,
-    SYS_TYPE param3,SYS_TYPE param4,SYS_TYPE param5); 
+    SYS_TYPE param3,SYS_TYPE param4,SYS_TYPE param5);
 typedef void (*TaskHandler)(SYS_TYPE param1);
 
 struct  hal_work_task
@@ -814,7 +814,7 @@ struct hal_layer_ops
 
     unsigned int (*phy_set_lretry_limit)(unsigned int data);
     unsigned int (*phy_set_sretry_limit)(unsigned int data);
-    
+
     int (*hal_reg_task)(TaskHandler task);
     int (*hal_call_task)(SYS_TYPE taskid, SYS_TYPE param1);
     int (*hal_get_agg_pend_cnt)(void);
@@ -884,7 +884,19 @@ struct hal_layer_ops
     unsigned int (*hal_cfg_cali_param)(void);
     unsigned int (*hal_cfg_txpwr_cffc_param)(void * chan,void * txpwr_plan);
     unsigned short (*hal_get_tx_page_total_num)(void);
-    unsigned int (*hal_read_efuse_val)(unsigned int efuse_addr);
+    unsigned int (*hal_read_efuse)(unsigned int efuse_addr);
+    void (*hal_write_efuse)(unsigned int efuse_addr, unsigned int efuse_val);
+    //mdns offload
+    void (*phy_set_mdns_offload_state)(int enable);
+    void (*phy_set_passthrough_behavior)(int behavior);
+    void (*phy_set_mdns_reset_all)(void);
+    void (*phy_set_mdns_add_protocol_data_inform)(void);
+    int (*phy_set_mdns_add_protocol_data)(void *list_param, uint8_t list_len, uint8_t *raw_data, uint16_t data_len);
+    void (*phy_set_mdns_remove_protocol_data)(int index);
+    void (*phy_set_mdns_get_reset_hit_counter)(int index);
+    void (*phy_set_mdns_get_reset_miss_counter)(void);
+    void (*phy_set_mdns_add_passthrough_list)(uint8_t *qname, int length);
+    void (*phy_set_mdns_remove_passthrough_list)(uint8_t *qname, int length);
 };
 
 #define HAL_FW_IN_ACTIVE  BIT(0)
@@ -990,7 +1002,7 @@ struct hal_layer_ops
     unsigned long tx_spinlock_flag;
     unsigned long com_spinlock_flag;
     unsigned long pn_spinlock_flag;
-    
+
     unsigned char hst_if_init_ok; // shared for DMA & SDIO
     unsigned char hst_if_irq_en; //shared for DMA & SDIO
     unsigned char bhalOpen;
@@ -998,7 +1010,7 @@ struct hal_layer_ops
     unsigned char bhalMKeySet[4]; //for all vmac_id, now for mkey reset
     unsigned char bhalUKeySet[4]; //for all vmac_id, now for ukey reset
     unsigned char bWpaMicMeasureEnable;
-    
+
     unsigned int int_status_copy; //0x70  is read-clean REG,save for debug
     unsigned char HalTxFrameDoneCounter;  //old counter of frames have been tx completed
     unsigned int HalRxFrameDoneCounter;  //old counter of frames have been rxed from firmware

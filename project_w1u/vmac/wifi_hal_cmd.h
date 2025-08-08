@@ -25,6 +25,7 @@ typedef struct TXTParameter
     unsigned char ant_gpio_cfg;
     unsigned char wifi_fwlog_by_file;
     unsigned char channel_2g_20Mhz_only;
+    unsigned char country_ie_report;
     unsigned char scan_abort_enable;
     unsigned char scan_interval_thr;
 } TXTParameter;
@@ -119,6 +120,18 @@ int aml_send_me_shutdown(void);
 void phy_set_cf_end(unsigned char vid, unsigned char is_enable);
 unsigned char hal_ant_sel_en_get(void);
 unsigned char hal_get_channel_2g_20Mhz_only(void);
+TXTParameter *hal_get_txt_parameter(void);
 void phy_get_queue_debug_info(unsigned char vid);
+void phy_set_mdns_offload_state(int enable);
+void phy_set_passthrough_behavior(int behavior);
+void phy_set_mdns_reset_all(void);
+void phy_set_mdns_add_protocol_data_inform(void);
+int phy_set_mdns_add_protocol_data(void *list_param, uint8_t list_len, uint8_t *raw_data, uint16_t data_len);
+void phy_set_mdns_remove_protocol_data(int index);
+void phy_set_mdns_get_reset_hit_counter(int index);
+void phy_set_mdns_get_reset_miss_counter(void);
+void phy_set_mdns_add_passthrough_list(uint8_t *qname, int length);
+void phy_set_mdns_remove_passthrough_list(uint8_t *qname, int length);
+
 
 #endif  //__AML_PHY_H__

@@ -162,6 +162,7 @@ ddk_module(
 		"-Wno-attribute-warning",
 		"-Wno-frame-larger-than",
 		"-Wno-implicit-fallthrough",
+		"-Wno-int-to-pointer-cast",
 	],
 	out = "w1u.ko",
 	kernel_build = "//common_drivers:amlogic",

@@ -86,7 +86,8 @@ void hif_init_ops(void)
     ops->bt_hi_read_word = aml_bt_hi_read_word;
     ops->hif_suspend = aml_sdio_suspend;
 #endif
-    ops->hi_read_efuse = efuse_manual_read;
+    ops->hi_read_efuse = hif_read_efuse;
+    ops->hi_write_efuse = hif_write_efuse;
     ops->hi_send_frame = aml_sdio_scat_req_rw;
     ops->hif_get_sts = hif_get_sts;
     ops->hif_pt_rx_start = hif_pt_rx_start;
@@ -2089,6 +2090,37 @@ struct rx_statics_st hif_pt_rx_stop(void)
 #endif
 }
 
+unsigned int hif_read_efuse(unsigned int addr)
+{
+    efuse_operate_cmd_t efuse_operate_cmd;
+
+    efuse_operate_cmd.cmd = EFUSE_OPERATE_CMD | CMD_GET;
+    efuse_operate_cmd.sub_cmd = efuse_operate_read;
+    efuse_operate_cmd.efuse_addr = addr;
+    hi_get_cmd((unsigned char *)&efuse_operate_cmd, sizeof(efuse_operate_cmd_t));
+
+    AML_PRINT_LOG_INFO("cmd:0x%x, sub_cmd:0x%x, efuse_addr:0x%08x, efuse_val:0x%08x\n",
+        efuse_operate_cmd.cmd, efuse_operate_cmd.sub_cmd,
+        efuse_operate_cmd.efuse_addr, efuse_operate_cmd.efuse_val);
+
+    return efuse_operate_cmd.efuse_val;
+}
+
+void hif_write_efuse(unsigned int addr, unsigned int val)
+{
+    efuse_operate_cmd_t efuse_operate_cmd;
+
+    efuse_operate_cmd.cmd = EFUSE_OPERATE_CMD;
+    efuse_operate_cmd.sub_cmd = efuse_operate_write;
+    efuse_operate_cmd.efuse_addr = addr;
+    efuse_operate_cmd.efuse_val = val;
+
+    AML_PRINT_LOG_INFO("cmd:0x%x, sub_cmd:0x%x, efuse_addr:0x%08x, efuse_val:0x%08x\n",
+        efuse_operate_cmd.cmd, efuse_operate_cmd.sub_cmd,
+        efuse_operate_cmd.efuse_addr, efuse_operate_cmd.efuse_val);
+
+    hi_set_cmd((unsigned char *)&efuse_operate_cmd, sizeof(efuse_operate_cmd_t));
+}
 #ifdef HAL_SIM_VER
 #ifdef FW_NAME
 }

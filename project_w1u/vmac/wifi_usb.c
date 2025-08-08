@@ -1330,16 +1330,17 @@ void hif_init_usb_ops(void)
 
     hif->hif_ops.hi_write_word = aml_usb_write_word;
     hif->hif_ops.hi_read_word = aml_usb_read_word;
-    hif->hif_ops.hi_read_efuse = aml_usb_read_efuse;
     hif->hif_ops.hi_write_sram = aml_usb_write_sram;
     hif->hif_ops.hi_read_sram = aml_usb_read_sram;
 
-//    hif->hif_ops.hif_aon_write_reg = aml_usb_write_word;
-//    hif->hif_ops.hif_aon_read_reg = aml_usb_read_word;
+    //hif->hif_ops.hif_aon_write_reg = aml_usb_write_word;
+    //hif->hif_ops.hif_aon_read_reg = aml_usb_read_word;
 
     hif->hif_ops.hif_get_sts = hif_get_sts;
     hif->hif_ops.hif_pt_rx_start = hif_pt_rx_start;
     hif->hif_ops.hif_pt_rx_stop = hif_pt_rx_stop;
+    hif->hif_ops.hi_read_efuse = hif_read_efuse;
+    hif->hif_ops.hi_write_efuse = hif_write_efuse;
 }
 
 #ifdef USB_BUILD_IN
@@ -1478,19 +1479,15 @@ unsigned int aml_aon_read_reg(unsigned int addr)
 }
 
 #endif
-#if defined(SDIO_MODE_ON) || defined(SDIO_BUILD_IN)
+
 extern unsigned char recovery_notify_bt;
-extern unsigned char recovery_done;
-#endif
+
 void aml_usb_disable_wifi(void)
 {
     AML_PRINT_LOG_INFO("enter\n");
     wifi_usb_access = 0;
 
-#if defined(SDIO_MODE_ON) || defined(SDIO_BUILD_IN)
     recovery_notify_bt = 1;
-    recovery_done = 0;
-#endif
 
     /* 1.chip en off, usb disconnect */
 #ifndef UBUNTU_PT_MODE
@@ -1526,9 +1523,7 @@ void aml_usb_enable_wifi(void)
     wifi_usb_access = 1;
     hal_fw_repair();
     usb_stor_control_msg((unsigned long)hal_priv);
-#if defined(SDIO_MODE_ON) || defined(SDIO_BUILD_IN)
-    recovery_done = 1;
-#endif
+    recovery_notify_bt = 0;
 }
 
 void aml_usb_exit(void)

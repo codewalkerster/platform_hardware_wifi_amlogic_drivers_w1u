@@ -478,7 +478,8 @@ void wifi_mac_pwrsave_vattach(struct wlan_net_vif *wnet_vif)
     ps->ips_inactivitytime = WIFINET_PWRSAVE_TIMER_INTERVAL;
     ps->ips_sta_psmode = WIFINET_PWRSAVE_NONE;
     /*default value,  vo,vi support delivery-trigger enable, Max SP bit5bi6 = 0, receive all BUs from AP */
-    wnet_vif->vm_uapsdinfo = WME_CAPINFO_UAPSD_VO | WME_CAPINFO_UAPSD_VI;
+    // wnet_vif->vm_uapsdinfo = WME_CAPINFO_UAPSD_VO | WME_CAPINFO_UAPSD_VI;
+    wnet_vif->vm_uapsdinfo = 0;
     ps->ips_state = WIFINET_PWRSAVE_AWAKE;
 
     os_timer_ex_initialize(&ps->ips_timer_presleep, ps->ips_inactivitytime,
@@ -1773,6 +1774,7 @@ int wifi_mac_pwrsave_wow_suspend(SYS_TYPE param1,
             AML_PRINT_LOG_ERR("<%s>:wait scan end fail when host suspend \n",
                 wnet_vif->vm_ndev->name);
             WIFINET_PWRSAVE_MUTEX_UNLOCK(wnet_vif);
+            wnet_vif->vm_scan_hang = 0;
             return -1;
         }
     }
@@ -1800,7 +1802,8 @@ int wifi_mac_pwrsave_wow_suspend(SYS_TYPE param1,
     {
         while (timeout < HAL_TX_EMPTY_TIMEOUT) {
             if (hal_tx_empty()) {
-               hal_download_offload_fw();
+               if (hal_download_offload_fw())
+                   return -1;
                break;
             }
             msleep(10);

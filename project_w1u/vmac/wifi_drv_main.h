@@ -127,6 +127,13 @@
 
 typedef void (*lp_shutdown_func)(void);
 
+enum {
+    AML_TRACE_FW_LOG_START = 0xFF01,
+    AML_TRACE_FW_LOG_STOP,
+    AML_TRACE_FW_LOG_UPLOAD,
+    AML_CLOSE_NETLINK_SOCKET = 0xFF06,
+};
+
 struct drv_tx_scoreboard
 {
     unsigned char vid;
@@ -329,6 +336,7 @@ struct drv_config
     unsigned char cfg_band;
     unsigned char cfg_recovery;
     unsigned char cfg_adaptive_mode;
+    unsigned char cfg_adaptive_en;
 };
 
 /* Reset flag */
@@ -623,5 +631,16 @@ int aml_log_nl_init(void);
 void aml_log_nl_deinit(void);
 unsigned char drv_calc_agg_num(struct drv_private *drv_priv, unsigned char ampdu_subframe_num);
 unsigned short drv_get_tx_page_total_num(struct drv_private *drv_priv);
-unsigned int drv_read_efuse_val(struct drv_private *drv_priv, unsigned int efuse_addr);
+unsigned int drv_read_efuse(struct drv_private *drv_priv, unsigned int efuse_addr);
+void drv_set_mdns_offload_state(struct drv_private *drv_priv, int enable);
+void drv_set_passthrough_behavior(struct drv_private *drv_priv, int behavior);
+void drv_set_mdns_reset_all(struct drv_private *drv_priv);
+void drv_set_mdns_add_protocol_data_status(struct drv_private *drv_priv);
+int drv_set_mdns_add_protocol_data(struct drv_private *drv_priv,void *list_param, mdnsProtocolData *offloadData);
+void drv_set_mdns_remove_protocol_data(struct drv_private *drv_priv, int index);
+void drv_set_mdns_get_reset_hit_counter(struct drv_private *drv_priv, int index);
+void drv_set_mdns_get_reset_miss_counter(struct drv_private *drv_priv);
+void drv_set_mdns_add_passthrough_list(struct drv_private *drv_priv, uint8_t *qname, int length);
+void drv_set_mdns_remove_passthrough_list(struct drv_private *drv_priv, uint8_t *qname, int length);
+int aml_send_log_to_user(char *pbuf, uint16_t len, int msg_type);
 #endif /* _DRIV_MAIN_H_ */

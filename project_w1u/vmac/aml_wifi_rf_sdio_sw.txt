@@ -23,6 +23,9 @@ ant_sel_en=1
 #rf count<unsigned char>
 rf_count=2
 
+#scan report country ie <char>
+country_ie_report=0
+
 #tssi_ratio_limit =[on=1/off=0],[2g_ratio,],[5g_ratio]
 wftx_tssi_ratio_limit=1,100,133
 digital_code_gain_limit=1,0x0,0xff,0x0,0xff

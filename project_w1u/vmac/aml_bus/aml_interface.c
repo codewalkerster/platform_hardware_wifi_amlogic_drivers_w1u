@@ -185,6 +185,16 @@ void aml_bus_intf_rmmod(void)
 #endif
 }
 
+void (*bt_request_recovery)(void);
+EXPORT_SYMBOL(bt_request_recovery);
+unsigned char recovery_notify_bt;
+unsigned char bt_get_recovery_status(void)
+{
+    return recovery_notify_bt;
+}
+EXPORT_SYMBOL(recovery_notify_bt);
+EXPORT_SYMBOL(bt_get_recovery_status);
+
 module_param(bus_type, charp,S_IRUSR | S_IRGRP | S_IROTH);
 MODULE_PARM_DESC(bus_type,"A string variable to adjust pci or sdio or usb bus interface");
 module_init(aml_bus_intf_insmod);

@@ -34,6 +34,7 @@ namespace FW_NAME
 
 #include "wifi_mac_com.h"
 #include "wifi_debug_key.h"
+#include "aml_mdns_offload.h"
 
 #if defined (HAL_FPGA_VER)
 #include "wifi_drv_statistic.h"
@@ -2130,6 +2131,7 @@ unsigned char parse_cali_param(char *varbuf, int len, struct Cali_Param *cali_pa
     get_s8_item(varbuf, len, "ant_gpio_cfg", &aml_txt_parameter.ant_gpio_cfg);
     get_s8_item(varbuf, len, "wifi_fwlog_by_file", &aml_txt_parameter.wifi_fwlog_by_file);
     get_s8_item(varbuf, len, "channel_2g_20Mhz_only", &aml_txt_parameter.channel_2g_20Mhz_only);
+    get_s8_item(varbuf, len, "country_ie_report", &aml_txt_parameter.country_ie_report);
     aml_txt_parameter.scan_abort_enable = 0;
     aml_txt_parameter.scan_interval_thr = 22;
     get_s8_item(varbuf, len, "scan_abort_enable", &aml_txt_parameter.scan_abort_enable);
@@ -2182,6 +2184,7 @@ unsigned char parse_cali_param(char *varbuf, int len, struct Cali_Param *cali_pa
             cali_param->digital_gain_limit.min_5g, cali_param->digital_gain_limit.max_5g);
      AML_PRINT_LOG_INFO("======>>>>>> wifi_fwlog_by_file = %d\n", aml_txt_parameter.wifi_fwlog_by_file);
      AML_PRINT_LOG_INFO("======>>>>>> channel_2g_20Mhz_only = %d\n", aml_txt_parameter.channel_2g_20Mhz_only);
+     AML_PRINT_LOG_INFO("======>>>>>> country_ie_report = %d\n", aml_txt_parameter.country_ie_report);
      AML_PRINT_LOG_INFO("======>>>>>> scan_abort_enable = %d\n", aml_txt_parameter.scan_abort_enable);
      AML_PRINT_LOG_INFO("======>>>>>> scan_interval_thr = %d\n", aml_txt_parameter.scan_interval_thr);
 
@@ -2572,6 +2575,218 @@ unsigned char hal_ant_sel_en_get(void)
 unsigned char hal_get_channel_2g_20Mhz_only(void)
 {
     return aml_txt_parameter.channel_2g_20Mhz_only;
+}
+struct mm_mdns_add_data mdns_env_drv;
+
+void phy_set_mdns_offload_state(int enable)
+{
+    struct mdns_offload_state mdns_offload_state = {0};
+
+    mdns_offload_state.Cmd = SET_MDNS_OFFLOAD_STATE_CMD;
+    mdns_offload_state.enable = enable;
+    printk("set_mdns_offload_state: %d", enable);
+
+    HAL_BEGIN_LOCK();
+    hi_set_cmd((unsigned char *)&mdns_offload_state, sizeof(struct mdns_offload_state));
+    HAL_END_LOCK();
+}
+
+void phy_set_passthrough_behavior(int behavior)
+{
+    struct mdns_offload_behavior mdns_offload_behavior = {0};
+
+    mdns_offload_behavior.Cmd = SET_MDNS_OFFLOAD_BEHAVIOR_CMD;
+    mdns_offload_behavior.behavior = behavior;
+
+    HAL_BEGIN_LOCK();
+    hi_set_cmd((unsigned char *)&mdns_offload_behavior, sizeof(struct mdns_offload_behavior));
+    HAL_END_LOCK();
+}
+
+void phy_set_mdns_reset_all(void)
+{
+    struct mdns_offload_reset_all mdns_offload_reset_all = {0};
+    mdns_offload_reset_all.Cmd = SET_MDNS_OFFLOAD_RESET_ALL_CMD;
+
+    HAL_BEGIN_LOCK();
+    hi_set_cmd((unsigned char *)&mdns_offload_reset_all, sizeof(struct mdns_offload_reset_all));
+    HAL_END_LOCK();
+}
+
+uint32_t mdns_index = 0;
+
+int mdns_misscnt = 0;
+int mdns_hitcnt = 0;
+int mdns_passthrough_state = -1;
+int mdns_passthrough_index = 0;
+
+struct mm_mdns_data_addr mm_mdns_data_addr_drv_write = {0};
+//struct mm_mdns_data_state mm_mdns_data_state = {-1, -1};
+
+
+void phy_set_mdns_add_protocol_data_inform(void)
+{
+    struct mm_mdns_add_data_inform mm_mdns_add_data_inform = {0};
+    mm_mdns_add_data_inform.Cmd = ADD_MDNS_OFFLOAD_DATA_INFORM_CMD;
+    //index set valid in fw
+    mm_mdns_add_data_inform.index = (mdns_index % 3);
+    //mm_mdns_add_data_inform.list_len = offloadData->matchCriteriaListNum;
+    //mm_mdns_add_data_inform.data_len = offloadData->rawOffloadPacketLen;
+
+    //inform fw to add index and state
+    HAL_BEGIN_LOCK();
+    hi_set_cmd((unsigned char *)&mm_mdns_add_data_inform, sizeof(struct mm_mdns_add_data_inform));
+    HAL_END_LOCK();
+}
+
+void mdnsOffload_dump_frame(unsigned char *buf,
+    uint32_t len)
+{
+    int line = 16, i = 0, j = 0;
+    uint32_t n = 0;
+    unsigned char *dump = NULL;
+
+    dump = (unsigned char *)kmalloc(256, GFP_KERNEL);
+    if (!dump) {
+        printk("mdnsOffload: alloc failed!\n");
+        return;
+    }
+    for (i = 0; i < len; i++) {
+        memset(dump, 0, 256);
+        n = 0;
+        n += sprintf(dump + n, "%04x|", i);
+        for (j = i; j < i + line; j++) {
+            if (j < len)
+                n += sprintf(dump + n, "%02x", buf[j]);
+            else
+                n += sprintf(dump + n, "  ");
+            if (j == i + line - 1)
+                n += sprintf(dump + n, "|");
+            else
+                n += sprintf(dump + n, " ");
+        }
+        for (j = i; j < i + line && j < len; j++) {
+            if (buf[j] > 32 && buf[j] < 127)
+                n += sprintf(dump + n, "%c", buf[j]);
+            else
+                n += sprintf(dump + n, ".");
+        }
+        printk("%s\n", dump);
+        i = i + line - 1;
+    }
+    kfree(dump);
+}
+
+int phy_set_mdns_add_protocol_data(void *list_param, uint8_t list_len, uint8_t *raw_data, uint16_t data_len)
+{
+    int ret = 0;
+    memset(&mdns_env_drv, 0 , sizeof(struct mm_mdns_add_data));
+    mdns_env_drv.list_len = list_len;
+    mdns_env_drv.data_len = data_len;
+    uint8_t mdns_frame[600] = {0};
+
+    memcpy(mdns_env_drv.raw_offload_packet, raw_data, data_len);
+    memcpy(mdns_env_drv.list_criteria, list_param, list_len * sizeof(matchCriteria));
+    //write mdns resp to fw
+    printk("mdns_frame len: %d\n", sizeof(struct mm_mdns_add_data));
+    hal_write_mem((unsigned char *)(&mdns_env_drv), (unsigned int)mm_mdns_data_addr_drv_write.mdns_data_addr[mdns_index % 3], sizeof(struct mm_mdns_add_data));
+    hal_read_mem(mdns_frame, (unsigned int)mm_mdns_data_addr_drv_write.mdns_data_addr[mdns_index % 3], 492);
+    printk("mdns_frame print: %d \n", sizeof(struct mm_mdns_add_data));
+    //mdnsOffload_dump_frame(mdns_frame + 68, 492);
+    //mdnsOffload_dump_frame((unsigned char *)(&mdns_env_drv) + 68, 492);
+    ret = mdns_index % 3;
+    mdns_index++;
+    return ret;
+}
+
+void phy_set_mdns_remove_protocol_data(int index)
+{
+    struct mm_mdns_remove_data mm_mdns_remove_data = {0};
+    mm_mdns_remove_data.Cmd = REMOVE_MDNS_OFFLOAD_DATA_CMD;
+    mm_mdns_remove_data.index = index;
+
+    HAL_BEGIN_LOCK();
+    hi_set_cmd((unsigned char *)&mm_mdns_remove_data, sizeof(struct mm_mdns_remove_data));
+    HAL_END_LOCK();
+}
+
+void phy_set_mdns_get_reset_hit_counter(int index)
+{
+    struct mm_mdns_get_hit mm_mdns_get_hit = {0};
+    mm_mdns_get_hit.Cmd = GET_MDNS_OFFLOAD_RESET_HIT_CONTER_CMD;
+    mm_mdns_get_hit.index = index;
+    mdns_hitcnt = 0;
+
+    HAL_BEGIN_LOCK();
+    hi_set_cmd((unsigned char *)&mm_mdns_get_hit, sizeof(struct mm_mdns_get_hit));
+    HAL_END_LOCK();
+}
+
+void phy_set_mdns_get_reset_miss_counter(void)
+{
+    struct mm_mdns_get_miss mm_mdns_get_miss = {0};
+    mm_mdns_get_miss.Cmd = GET_MDNS_OFFLOAD_RESET_MISS_CONTER_CMD;
+    mdns_misscnt = 0;
+
+    HAL_BEGIN_LOCK();
+    hi_set_cmd((unsigned char *)&mm_mdns_get_miss, sizeof(struct mm_mdns_get_miss));
+    HAL_END_LOCK();
+
+}
+
+void phy_set_mdns_add_passthrough_list(uint8_t *qname, int length)
+{
+    struct mm_mdns_passthrough_list mm_mdns_passthrough_list = {0};
+    mm_mdns_passthrough_list.Cmd = ADD_MDNS_OFFLOAD_PASSTHROUGH_LIST_CMD;
+    //mm_mdns_passthrough_list.length = length;
+    //memcpy(&mm_mdns_passthrough_list.qname, qname, length);
+    mm_mdns_passthrough_list.index = (mdns_passthrough_index % 4);
+    mdns_passthrough_state = -1;
+    if (length < MDNS_QNAME_LENGTH_MAX) {
+        hal_write_mem(qname, mm_mdns_data_addr_drv_write.passthrough_addr[mdns_passthrough_index % 4], length);
+    } else {
+        //mdns_passthrough_state = -1;
+        return;
+    }
+    mdns_passthrough_state = 0;
+    mdns_passthrough_index++;
+    HAL_BEGIN_LOCK();
+    hi_set_cmd((unsigned char *)&mm_mdns_passthrough_list, sizeof(struct mm_mdns_passthrough_list));
+    HAL_END_LOCK();
+}
+
+void phy_set_mdns_remove_passthrough_list(uint8_t *qname, int length)
+{
+
+    struct mm_mdns_passthrough_list mm_mdns_passthrough_list = {0};
+    int cnt = 0;
+    int remove_index = -1;
+    uint8_t fw_qname[MDNS_QNAME_LENGTH_MAX] = {0};
+    mm_mdns_passthrough_list.Cmd = REMOVE_MDNS_OFFLOAD_PASSTHROUGH_LIST_CMD;
+
+    while (cnt < MDNS_PASSTHROUGH_MAX)
+    {
+        //read in fw_qname to cmp the reove name, if match set index to fw set false
+        hal_read_mem(fw_qname, mm_mdns_data_addr_drv_write.passthrough_addr[cnt], length);
+        if (memcmp(qname, fw_qname, length) == 0) {
+            remove_index = cnt;
+            break;
+        } else {
+            cnt++;
+        }
+    }
+
+    if (remove_index != -1) {
+        mm_mdns_passthrough_list.index = remove_index;
+        HAL_BEGIN_LOCK();
+        hi_set_cmd((unsigned char *)&mm_mdns_passthrough_list, sizeof(struct mm_mdns_passthrough_list));
+        HAL_END_LOCK();
+    }
+}
+
+TXTParameter *hal_get_txt_parameter(void)
+{
+    return &aml_txt_parameter;
 }
 
 #ifdef HAL_SIM_VER

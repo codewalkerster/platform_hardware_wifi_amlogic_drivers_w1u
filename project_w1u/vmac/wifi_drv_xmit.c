@@ -1424,8 +1424,8 @@ static void drv_tx_complete_mgmt_handle(struct drv_private *drv_priv,struct drv_
         ;
     }
 
-    if (p2p_pub_act && (p2p_pub_act->category == AML_CATEGORY_PUBLIC) && (p2p_pub_act->action == WIFINET_ACT_PUBLIC_P2P)) {
-        if (p2p_pub_act->oui_type == OUI_TYPE_DPP) {
+    if (p2p_pub_act && (p2p_pub_act->category == AML_CATEGORY_PUBLIC)) {
+        if (p2p_pub_act->action == WIFINET_ACT_PUBLIC_P2P && p2p_pub_act->oui_type == OUI_TYPE_DPP) {
             unsigned char dpp_action_subtype = *((char*)wh + sizeof(struct wifi_frame) + 7);
             if (dpp_action_subtype < 19) {
                 AML_PRINT_LOG_INFO("DPP->%s tx_status:%d flags:0x%x %d\n", dpp_pub_action_str[dpp_action_subtype], status, wnet_vif->vm_flags_ext2, sizeof(dpp_pub_action_str[0]));
@@ -1453,6 +1453,16 @@ static void drv_tx_complete_mgmt_handle(struct drv_private *drv_priv,struct drv_
             wnet_vif->vm_flags_ext2 &= ~WIFINET_FEXT2_DPP_SEND;
             if (wnet_vif->vm_flags_ext2 & WIFINET_FEXT2_MGMT_RESTORE_CHANNEL) {
                 AML_PRINT_LOG_INFO("dpp frame restore chan\n");
+                wnet_vif->vm_flags_ext2 &= ~WIFINET_FEXT2_MGMT_RESTORE_CHANNEL;
+                wifi_mac_restore_wnet_vif_channel_task(wnet_vif);
+            }
+        } else if (((p2p_pub_act->action == WIFINET_ACT_PUBLIC_GAS_REQ) || (p2p_pub_act->action == WIFINET_ACT_PUBLIC_GAS_RSP))) {
+            sta->sta_wnet_vif->vm_p2p->send_tx_status_flag = 1;
+            cfg80211_mgmt_tx_status(sta->sta_wnet_vif->vm_wdev, sta->sta_wnet_vif->vm_p2p->cookie,
+                sta->sta_wnet_vif->vm_p2p->raw_action_pkt, sta->sta_wnet_vif->vm_p2p->raw_action_pkt_len, txok, GFP_KERNEL);
+            wnet_vif->vm_flags_ext2 &= ~WIFINET_FEXT2_DPP_SEND;
+            if (wnet_vif->vm_flags_ext2 & WIFINET_FEXT2_MGMT_RESTORE_CHANNEL) {
+                AML_PRINT_LOG_INFO("gas frame restore chan\n");
                 wnet_vif->vm_flags_ext2 &= ~WIFINET_FEXT2_MGMT_RESTORE_CHANNEL;
                 wifi_mac_restore_wnet_vif_channel_task(wnet_vif);
             }

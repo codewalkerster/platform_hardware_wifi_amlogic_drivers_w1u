@@ -431,30 +431,34 @@ void wifi_mac_set_channel_rssi(struct wifi_mac *wifimac, unsigned char rssi)
         wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, rssi_set, 1);
         AML_PRINT_LOG_INFO("r_sg %d-> %d\n", wifimac->is_connect_set_gain, 256 - rssi_set);
     }
-    if (wifimac->is_connect_set_gain || ((!wifimac->is_connect_set_gain) && (wifimac->drv_priv->drv_config.cfg_txpoweplan != TX_POWER_CE)) ||
-        (!wifimac->in_throughput) ){
-        if (wifimac->drv_priv->drv_config.cfg_adaptive_mode == ENABLE) {
-            wifimac->drv_priv->drv_config.cfg_adaptive_mode = DISABLE;
-            hif->hif_ops.hi_write_word(DF_AGC_REG_A29, CCA_THRD_DEFAULT); //agc threshold  -74dbm
-            wifimac->drv_priv->drv_config.cfg_burst_ack = 1;//set_burst = 1
-            aml_iwpriv_set_recovery(1);
-            wifimac->drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC]->vm_bmiss_max = WIFINET_BMISS_COUNT_MAX;
-            AML_PRINT_LOG_INFO("am %d\n", wifimac->drv_priv->drv_config.cfg_adaptive_mode);
-        }
-    }
-    else {
-        if ((wifimac->drv_priv->drv_config.cfg_txpoweplan == TX_POWER_CE) && (wifimac->drv_priv->drv_config.cfg_adaptive_mode == DISABLE) &&
-            (wifimac->drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC]->vm_mainsta->connect_status == CONNECT_DHCP_GET_ACK) && wifimac->in_throughput) {
 
-            wifimac->drv_priv->drv_config.cfg_adaptive_mode = ENABLE;
-            hif->hif_ops.hi_write_word(DF_AGC_REG_A29, CCA_THRD_CE_FCC); //agc threshold  -82dbm
-            //wifimac->drv_priv->drv_config.cfg_burst_ack = 0;//set_burst = 0
+    if (wifimac->drv_priv->drv_config.cfg_adaptive_en)
+    {
+        if (wifimac->is_connect_set_gain || ((!wifimac->is_connect_set_gain) && (wifimac->drv_priv->drv_config.cfg_txpoweplan != TX_POWER_CE)) ||
+            (!wifimac->in_throughput) ){
+            if (wifimac->drv_priv->drv_config.cfg_adaptive_mode == ENABLE) {
+                wifimac->drv_priv->drv_config.cfg_adaptive_mode = DISABLE;
+                hif->hif_ops.hi_write_word(DF_AGC_REG_A29, CCA_THRD_DEFAULT); //agc threshold  -74dbm
+                wifimac->drv_priv->drv_config.cfg_burst_ack = 1;//set_burst = 1
+                aml_iwpriv_set_recovery(1);
+                wifimac->drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC]->vm_bmiss_max = WIFINET_BMISS_COUNT_MAX;
+                AML_PRINT_LOG_INFO("am %d\n", wifimac->drv_priv->drv_config.cfg_adaptive_mode);
+            }
+        }
+        else {
+            if ((wifimac->drv_priv->drv_config.cfg_txpoweplan == TX_POWER_CE) && (wifimac->drv_priv->drv_config.cfg_adaptive_mode == DISABLE) &&
+                (wifimac->drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC]->vm_mainsta->connect_status == CONNECT_DHCP_GET_ACK) && wifimac->in_throughput) {
+
+                wifimac->drv_priv->drv_config.cfg_adaptive_mode = ENABLE;
+                hif->hif_ops.hi_write_word(DF_AGC_REG_A29, CCA_THRD_CE_FCC); //agc threshold  -82dbm
+                //wifimac->drv_priv->drv_config.cfg_burst_ack = 0;//set_burst = 0
 #ifdef CONFIG_ROKU
-            wifimac->drv_priv->drv_config.cfg_burst_ack = 0;//set_burst = 0
-            aml_iwpriv_set_recovery(0);
-            wifimac->drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC]->vm_bmiss_max = 40;
+                wifimac->drv_priv->drv_config.cfg_burst_ack = 0;//set_burst = 0
+                aml_iwpriv_set_recovery(0);
+                wifimac->drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC]->vm_bmiss_max = 40;
 #endif
-            AML_PRINT_LOG_INFO("am %d\n", wifimac->drv_priv->drv_config.cfg_adaptive_mode);
+                AML_PRINT_LOG_INFO("am %d\n", wifimac->drv_priv->drv_config.cfg_adaptive_mode);
+            }
         }
     }
 }
@@ -952,6 +956,13 @@ unsigned char wifi_mac_is_dpp_frame(struct sk_buff *skb, struct wifi_station *st
             is_dpp_frame = true;
         }
     }
+
+    if (p2p_pub_act && (p2p_pub_act->category == AML_CATEGORY_PUBLIC)
+        && ((p2p_pub_act->action == WIFINET_ACT_PUBLIC_GAS_REQ) || (p2p_pub_act->action == WIFINET_ACT_PUBLIC_GAS_RSP))) {
+        AML_PRINT_LOG_INFO("gas frame action:%d\n", p2p_pub_act->action);
+        is_dpp_frame = true;
+    }
+
     return is_dpp_frame;
 }
 
@@ -1818,9 +1829,6 @@ const struct net_device_ops wifi_mac_netdev_ops =
     .ndo_set_mac_address = wifi_set_mac_address,
 };
 
-#define AMLWL_IPV4    1
-#define AMLWL_IPV6    2
-
 int aml_notify_ip(struct wifi_station *sta, u8 vif_ctx_id, u8 ip_type, u8 *ip_addr)
 {
     if (ip_type != AMLWL_IPV4 && ip_type != AMLWL_IPV6)
@@ -1901,6 +1909,7 @@ void wifi_mac_set_ipv6_addr(SYS_TYPE param1, SYS_TYPE param2,SYS_TYPE param3, SY
     unsigned char *ipv6_addr = (unsigned char *)param4;
 
     aml_notify_ip(sta, vif_id, type, ipv6_addr);
+    memcpy(sta->sta_wnet_vif->vm_static_ipv6, ipv6_addr, IPV6_LEN);
     return;
 }
 
@@ -3782,9 +3791,10 @@ wifi_mac_sub_sm(struct wlan_net_vif *wnet_vif, enum wifi_mac_state nstate, int a
                 wnet_vif->vm_phase_flags &= ~PHASE_CONNECTING;
 
                 if (!(wnet_vif->vm_flags & WIFINET_F_PRIVACY)
-                    && ((wnet_vif->vm_recovery_state == WIFINET_RECOVERY_VIF_UP) || (wnet_vif->vm_use_static_ip == 1))) {
+                    && ((wnet_vif->vm_recovery_state == WIFINET_RECOVERY_VIF_UP) || (wnet_vif->vm_use_static_ip == 1)
+                    || (wnet_vif->vm_11v_processing == WIFINET_BTM_STATUS_DONE)) ) {
                     struct vm_wdev_priv *pwdev_priv = wdev_to_priv(wnet_vif->vm_wdev);
-
+                    AML_PRINT(AML_LOG_ID_LOG, AML_LOG_LEVEL_DEBUG,"WNM cfg80211_tx_mgmt no=\n", wnet_vif->vm_11v_processing);
                     os_timer_ex_cancel(&pwdev_priv->connect_timeout, CANCEL_SLEEP);
 
                     if (wnet_vif->vm_recovery_state == WIFINET_RECOVERY_VIF_UP) {
@@ -3793,9 +3803,11 @@ wifi_mac_sub_sm(struct wlan_net_vif *wnet_vif, enum wifi_mac_state nstate, int a
                         wifi_mac_scan_access(wnet_vif);
                     }
 
-                    if (wnet_vif->vm_use_static_ip == 1) {
+                    if (wnet_vif->vm_use_static_ip == 1 ||(wnet_vif->vm_11v_processing == WIFINET_BTM_STATUS_DONE)) {
                         unsigned char *ip_tmp = wnet_vif->vm_static_ipv4;
-                        aml_notify_ip(sta, wnet_vif->wnet_vif_id, 1, wnet_vif->vm_static_ipv4);
+                        aml_notify_ip(sta, wnet_vif->wnet_vif_id, AMLWL_IPV4, wnet_vif->vm_static_ipv4);
+                        aml_notify_ip(sta, wnet_vif->wnet_vif_id, AMLWL_IPV6, wnet_vif->vm_static_ipv6);
+                        wnet_vif->vm_11v_processing = WIFINET_BTM_STATUS_INIT;
                         AML_PRINT_LOG_INFO("set static ip: [%d.%d.%d.%d]", ip_tmp[0], ip_tmp[1], ip_tmp[2], ip_tmp[3]);
                     }
                 }
@@ -4855,7 +4867,9 @@ int wifi_mac_create_vmac(struct wifi_mac *wifimac, void *ifr, int cmdFromwhr)
     wnet_vif->vm_def_mgmt_txkey = WIFINET_KEYIX_NONE;
     wnet_vif->vm_recovery_state = WIFINET_RECOVERY_END;
     wnet_vif->vm_use_static_ip = 0;
+    wnet_vif->vm_11v_processing = WIFINET_BTM_STATUS_INIT;
     memset(wnet_vif->vm_static_ipv4, 0x00, IPV4_LEN);
+    memset(wnet_vif->vm_static_ipv6, 0x00, IPV6_LEN);
     myaddr[2] += vid<<4;
 
     in_dev = __in_dev_get_rtnl(wnet_vif->vm_ndev);
@@ -5358,7 +5372,9 @@ void wifi_mac_get_repair_level(void)
 {
     struct wifi_mac *wifimac = wifi_mac_get_mac_handle();
 
-    if (wifimac->wm_recovery_src & BIT(WIFINET_RECOVERY_SRC_SDIO_TIMEOUT)) {
+    if (wifimac->wm_recovery_src & BIT(WIFINET_RECOVERY_SRC_BT_REQ)) {
+        wifimac->wm_recovery_level = WIFINET_RECOVERY_L_THOROUGH;
+    } else if (wifimac->wm_recovery_src & BIT(WIFINET_RECOVERY_SRC_SDIO_TIMEOUT)) {
         wifimac->wm_recovery_level = WIFINET_RECOVERY_L_THOROUGH;
     } else if (wifimac->wm_recovery_src & BIT(WIFINET_RECOVERY_SRC_CMD_CRASH)) {
         wifimac->wm_recovery_level = WIFINET_RECOVERY_L_NORMAL;
@@ -5562,11 +5578,16 @@ int wifi_mac_trigger_recovery(void *arg)
     struct hal_private* hal_priv = hal_get_priv();
     struct hw_interface* hif = hif_get_hw_interface();
     unsigned char report = 0;
+    unsigned char in_progress = 0;
 
 #if 0 //this is for test
     wifi_mac_add_work_task(wifimac, wifi_mac_connect_repair_task, NULL, (SYS_TYPE)wifimac, 0, 0, 0, 0);
     return 0;
 #endif
+    if (cmpxchg(&in_progress, 0, 1) != 0) {
+        return 0;
+    }
+
     if (wifimac->wm_recovery_flags & WIFINET_RECOVERY_F_RUNNING) {
         AML_PRINT_LOG_INFO("recovery in progress\n");
         return 0;
@@ -5605,64 +5626,65 @@ int wifi_mac_trigger_recovery(void *arg)
         tx_ok_num = hif->HiStatus.tx_ok_num;
         tx_fail_num = hif->HiStatus.tx_fail_num;
         more_check = 1;
-        return 0;
-    }
-
-    if (IS_RECOVERY_GET_TX_INFO(wifimac->wm_recovery_src)) {
-        tx_record_show();
-        wifi_mac_add_work_task(wifimac, wifi_mac_get_tx_info_task, NULL, (SYS_TYPE)wifimac, 0, 0, 0, 0);
-    }
-
-    more_check = (IS_RECOVERY_CHECK_ONCE(wifimac->wm_recovery_src) ? 0 : more_check);
-
-    wifi_mac_show_per_info();
-
-    /* maybe need recovery */
-    if (more_check != 0) {
-        //need check once more
-        AML_PRINT_LOG_INFO("recovery src 0x%x, need check again\n", wifimac->wm_recovery_src);
-        wifimac->wm_recovery_src &= ~WIFINET_RECOVERY_SRC_MASK;
     } else {
-        report = 0;
-        if ((observe_period == 0) && (aml_bus_type == AML_BUS_TYPE_SDIO)) {
-            //not in observation period, get repair level
-            wifi_mac_get_repair_level();
-        } else {
-            wifimac->wm_recovery_level = WIFINET_RECOVERY_L_THOROUGH;
+
+        if (IS_RECOVERY_GET_TX_INFO(wifimac->wm_recovery_src)) {
+            tx_record_show();
+            wifi_mac_add_work_task(wifimac, wifi_mac_get_tx_info_task, NULL, (SYS_TYPE)wifimac, 0, 0, 0, 0);
+            wifi_mac_show_per_info();
         }
+
+        more_check = (IS_RECOVERY_CHECK_ONCE(wifimac->wm_recovery_src) ? 0 : more_check);
+
+        /* maybe need recovery */
+        if (more_check != 0) {
+            //need check once more
+            AML_PRINT_LOG_INFO("recovery src 0x%x, need check again\n", wifimac->wm_recovery_src);
+            wifimac->wm_recovery_src &= ~WIFINET_RECOVERY_SRC_MASK;
+        } else {
+            report = 0;
+            if ((observe_period == 0) && (aml_bus_type == AML_BUS_TYPE_SDIO)) {
+                //not in observation period, get repair level
+                wifi_mac_get_repair_level();
+            } else {
+                wifimac->wm_recovery_level = WIFINET_RECOVERY_L_THOROUGH;
+            }
 
 #ifdef CHIP_RESET_SUPPORT
-        if (wifimac->drv_priv->drv_config.cfg_recovery == RECOVERY_ABL_ENABLE_REPORT
-            && wifimac->wm_recovery_level == WIFINET_RECOVERY_L_THOROUGH) {
-            report = 1;
-        }
+            if (wifimac->drv_priv->drv_config.cfg_recovery == RECOVERY_ABL_ENABLE_REPORT
+                && wifimac->wm_recovery_level == WIFINET_RECOVERY_L_THOROUGH) {
+                report = 1;
+            }
 #endif
 
-        AML_PRINT_LOG_INFO("send %d->%d, done %d->%d, free %d->%d\n",
-            send, TX_STS_READ(hif->HiStatus.Tx_Send_num), done, TX_STS_READ(hif->HiStatus.Tx_Done_num), free, TX_STS_READ(hif->HiStatus.Tx_Free_num));
+            AML_PRINT_LOG_INFO("send %d->%d, done %d->%d, free %d->%d\n",
+                send, TX_STS_READ(hif->HiStatus.Tx_Send_num), done, TX_STS_READ(hif->HiStatus.Tx_Done_num), free, TX_STS_READ(hif->HiStatus.Tx_Free_num));
 
-        AML_PRINT_LOG_INFO("free page %d->%d, tx_ok %d->%d, tx_fail %d->%d\n",
-                free_page, hal_priv->txPageFreeNum, tx_ok_num, hif->HiStatus.tx_ok_num, tx_fail_num, hif->HiStatus.tx_fail_num);
-        AML_PRINT_LOG_INFO("src 0x%x, level %d, cfg_recovery:%d, report:%d\n",
-                wifimac->wm_recovery_src & WIFINET_RECOVERY_SRC_MASK, wifimac->wm_recovery_level,
-                wifimac->drv_priv->drv_config.cfg_recovery, report);
+            AML_PRINT_LOG_INFO("free page %d->%d, tx_ok %d->%d, tx_fail %d->%d\n",
+                    free_page, hal_priv->txPageFreeNum, tx_ok_num, hif->HiStatus.tx_ok_num, tx_fail_num, hif->HiStatus.tx_fail_num);
+            AML_PRINT_LOG_INFO("src 0x%x, level %d, cfg_recovery:%d, report:%d\n",
+                    wifimac->wm_recovery_src & WIFINET_RECOVERY_SRC_MASK, wifimac->wm_recovery_level,
+                    wifimac->drv_priv->drv_config.cfg_recovery, report);
 
-        last_recovery_level = wifimac->wm_recovery_level;
-        observe_period = BIT(4);//need check 5 times after recovery
-        wifimac->wm_recovery_src &= ~WIFINET_RECOVERY_SRC_MASK;
+            last_recovery_level = wifimac->wm_recovery_level;
+            observe_period = BIT(4);//need check 5 times after recovery
+            wifimac->wm_recovery_src &= ~WIFINET_RECOVERY_SRC_MASK;
 
-        wifimac->wm_recovery_flags = WIFINET_RECOVERY_F_RUNNING;
-        if (report == 1) {
-            AML_PRINT_LOG_INFO("report\n");
+            wifimac->wm_recovery_flags = WIFINET_RECOVERY_F_RUNNING;
+            if (report == 1) {
+                AML_PRINT_LOG_INFO("report\n");
 #ifdef CHIP_RESET_SUPPORT
-            wifimac->request_upper_recovery = 1;
+                wifimac->request_upper_recovery = 1;
 #endif
-        } else {
-            wifi_mac_add_work_task(wifimac, wifi_mac_connect_repair_task, NULL, (SYS_TYPE)wifimac, 0, 0, 0, 0);
+            } else {
+                wifi_mac_add_work_task(wifimac, wifi_mac_connect_repair_task, NULL, (SYS_TYPE)wifimac, 0, 0, 0, 0);
+            }
         }
+
+        more_check ^= 0x1;
     }
 
-    more_check ^= 0x1;
+    cmpxchg(&in_progress, 1, 0);
 
     return 0;
 }
@@ -5961,6 +5983,13 @@ int aml_request_recovery(enum wifi_mac_recovery_source src)
     }
     AML_PRINT_LOG_INFO("recovery flags %d, request bit %d\n", wifimac->wm_recovery_flags, src);
     return 1;
+}
+
+void aml_bt_request_recovery(void)
+{
+    struct wifi_mac *wifimac = wifi_mac_get_mac_handle();
+    aml_request_recovery(WIFINET_RECOVERY_SRC_BT_REQ);
+    wifi_mac_trigger_recovery(wifimac);
 }
 
 unsigned char wifi_mac_need_chip_reset(void)

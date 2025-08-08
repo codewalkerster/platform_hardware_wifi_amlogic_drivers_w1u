@@ -1171,12 +1171,14 @@ void cca_thrd_cfg_change_handle(struct wlan_net_vif *wnet_vif, unsigned char cfg
         wnet_vif->vif_ops.write_word(DF_AGC_REG_A29, CCA_THRD_CE_FCC);
         wifimac->drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC]->vm_bmiss_max = 40;
         wifimac->drv_priv->drv_config.cfg_adaptive_mode = ENABLE;
+        wifimac->drv_priv->drv_config.cfg_adaptive_en = ENABLE;
     } else if (cfg == DISABLE) {
         aml_iwpriv_set_recovery(1);
         wifimac->drv_priv->drv_config.cfg_burst_ack = 1;
         wnet_vif->vif_ops.write_word(DF_AGC_REG_A29, CCA_THRD_DEFAULT);
         wifimac->drv_priv->drv_wnet_vif_table[NET80211_MAIN_VMAC]->vm_bmiss_max = WIFINET_BMISS_COUNT_MAX;
         wifimac->drv_priv->drv_config.cfg_adaptive_mode = DISABLE;
+        wifimac->drv_priv->drv_config.cfg_adaptive_en = DISABLE;
     }
     else {// CCA AUTO MODE
         AML_PRINT_LOG_INFO("cfg %d\n", cfg);

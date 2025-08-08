@@ -798,6 +798,7 @@ struct wlan_net_vif
     /*for beacon miss*/
     unsigned char vm_bmiss_count;
     unsigned char vm_bmiss_max;
+    unsigned char vm_11v_processing;
     unsigned int vm_wifi_link_secords;
     struct wifi_mac_rateset vm_legacy_rates;
     struct chan_switch_target_t csa_target;
@@ -874,6 +875,7 @@ struct wlan_net_vif
     enum wifi_mac_recovery_state vm_recovery_state;/* mark recovery state for current vif */
     unsigned char vm_use_static_ip;
     unsigned char vm_static_ipv4[IPV4_LEN];
+    unsigned char vm_static_ipv6[IPV6_LEN];
     unsigned char vm_sae_h2e_only;
     unsigned char csa_count;
     unsigned int  regulatory_flags;

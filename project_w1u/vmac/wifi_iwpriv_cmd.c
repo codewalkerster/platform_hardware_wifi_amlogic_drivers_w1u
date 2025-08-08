@@ -475,6 +475,12 @@ err:
 #endif
 }
 
+void aml_close_netlink_socket(void)
+{
+    AML_PRINT_LOG_INFO("close netlink socket in user space\n");
+    aml_send_log_to_user(NULL, 0, AML_CLOSE_NETLINK_SOCKET);
+}
+
 int aml_iwpriv_get_spec_regs(struct wlan_net_vif *wnet_vif, int addr_range)
 {
     int reg_domain = -1;
@@ -1607,6 +1613,24 @@ int aml_iwpriv_get_efuse(struct net_device *dev, char *str_addr, union iwreq_dat
 
     return 0;
 
+}
+
+int aml_iwpriv_get_coex_status(struct net_device *dev, char *str_addr, union iwreq_data *wrqu, char *extra)
+{
+    AML_PRINT_LOG_INFO("get_coex_status\n");
+
+    struct Coexist_Cmd coexist_cmd;
+
+    memset(&coexist_cmd, 0 , sizeof( struct Coexist_Cmd));
+    coexist_cmd.Cmd = COEXIST_CMD;
+    coexist_cmd.coexist_id_bitmap = COEXIST_PARAM_CMD_CONFIG;
+    coexist_cmd.reserve1[0] = COEXIST_SUB_CMD_GET_TIME;
+
+    HAL_BEGIN_LOCK();
+    hi_set_cmd((unsigned char *)&coexist_cmd, sizeof(struct Coexist_Cmd));
+    HAL_END_LOCK();
+
+    return 0;
 }
 
 int aml_iwpriv_get_efuse_domain(struct net_device *dev, char *str_domain, union iwreq_data *wrqu, char *extra)
@@ -3238,9 +3262,10 @@ int aml_iwpriv_get_efuse_wifi_mac(struct net_device *dev, union iwreq_data *wrqu
 {
     unsigned int efuse_data_l = 0;
     unsigned int efuse_data_h = 0;
+    struct hw_interface* hif = hif_get_hw_interface();
 
-    efuse_data_l = efuse_manual_read(0x1);
-    efuse_data_h = efuse_manual_read(0x2);
+    efuse_data_l = hif->hif_ops.hi_read_efuse(0x1);
+    efuse_data_h = hif->hif_ops.hi_read_efuse(0x2);
     AML_PRINT_LOG_INFO("AML EFUSE WIFI MAC ADDR:  %02x:%02x:%02x:%02x:%02x:%02x\n",
             (efuse_data_h & 0xff00) >> 8,efuse_data_h & 0x00ff, (efuse_data_l & 0xff000000) >> 24,
             (efuse_data_l & 0x00ff0000) >> 16,(efuse_data_l & 0xff00) >> 8,efuse_data_l & 0xff);
@@ -3401,6 +3426,10 @@ static int aml_iwpriv_get(struct net_device *dev,
 
         case AML_IWP_GET_CAPT_STATICS:
             aml_save_sta_capture_statics(wnet_vif);
+            break;
+
+        case AML_IWP_CLOSE_SOCKET:
+            aml_close_netlink_socket();
             break;
     }
 
@@ -3643,6 +3672,9 @@ static int aml_iwpriv_get_char(struct net_device *dev,
             break;
         case AML_IWP_GET_WIFI_PERFORMANCE_INFO:
             aml_iwpriv_get_performance_info(dev, wrqu, extra);
+            break;
+        case AML_IWP_GET_COEX_STATUS:
+            aml_iwpriv_get_coex_status(dev, parameter, wrqu, extra);
             break;
         default:
             break;
@@ -4094,6 +4126,7 @@ int iw_standard_get_stats(struct net_device *dev, struct iw_request_info *info,
 
     return 0;
 }
+
 
 static struct iw_statistics *aml_get_wireless_stats(struct net_device *dev)
 {
@@ -4624,6 +4657,9 @@ static const struct iw_priv_args aml_iwpriv_private_args[] = {
 {
     AML_IWP_GET_CAPT_STATICS,
     0, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "get_rate_stat"},
+{
+    AML_IWP_CLOSE_SOCKET,
+    0, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "close_socket"},
 
 
 {
@@ -4655,8 +4691,11 @@ static const struct iw_priv_args aml_iwpriv_private_args[] = {
     AML_IWP_GET_EFUSE,
     IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_MASK, IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_MASK, "get_efuse"},
 {
+    AML_IWP_GET_COEX_STATUS,
+    IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_MASK, IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_MASK, "get_coex_status"},
+{
     AML_IWP_GET_WIFI_MAC,
-   IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_MASK, IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_MASK, "get_mac_addr"},
+    IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_MASK, IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_MASK, "get_mac_addr"},
 {
     AML_IWP_GET_BT_MAC,
     IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_MASK, IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_MASK, "get_bt_dev_id"},

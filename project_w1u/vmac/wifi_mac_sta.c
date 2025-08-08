@@ -698,8 +698,20 @@ void wifi_mac_sta_leave(struct wifi_station *sta, int reassoc)
         if (wnet_vif->vm_recovery_state != WIFINET_RECOVERY_START
             || (wifimac->wm_recovery_flags & WIFINET_RECOVERY_F_BSS_JOINED(wnet_vif->wnet_vif_id)) == 0) {
             //p2p gc mode won't set WIFINET_RECOVERY_F_BSS_JOINED when recovery, and will report disconnect here
-            wifi_mac_notify_nsta_disconnect(sta, reassoc);
+            if (wnet_vif->vm_11v_processing != WIFINET_BTM_STATUS_ONGOING)
+            {
+                wifi_mac_notify_nsta_disconnect(sta, reassoc);
+            }
         }
+        if (wnet_vif->vm_11v_processing == WIFINET_BTM_STATUS_ONGOING && wnet_vif->vm_opmode == WIFINET_M_STA)
+        {
+            wnet_vif->vm_11v_processing = WIFINET_BTM_STATUS_DONE;
+        }
+        else
+        {
+            wnet_vif->vm_11v_processing = WIFINET_BTM_STATUS_INIT;
+        }
+
         wifimac->drv_priv->drv_ops.drv_set_pkt_drop(wifimac->drv_priv, wnet_vif->wnet_vif_id, 0);
         wifimac->drv_priv->drv_ops.drv_set_is_mother_channel(wifimac->drv_priv, wnet_vif->wnet_vif_id, 1);
         wifi_mac_rst_bss(wnet_vif);
@@ -716,7 +728,10 @@ void wifi_mac_sta_leave(struct wifi_station *sta, int reassoc)
         wifimac->is_connect_set_gain = 1;
         wifimac->drv_priv->drv_ops.set_channel_rssi(wifimac->drv_priv, 174, 0);
 
-        p2p_home_channel_switch(wifimac);
+        if (!(wnet_vif->vm_11v_processing == WIFINET_BTM_STATUS_DONE && wnet_vif->vm_opmode == WIFINET_M_STA))
+        {
+            p2p_home_channel_switch(wifimac);
+        }
 
         //if there is no key added, just disconnect
         if (wnet_vif->vm_key_bitmap == 0) {

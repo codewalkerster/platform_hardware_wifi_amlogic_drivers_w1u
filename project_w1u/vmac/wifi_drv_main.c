@@ -57,11 +57,7 @@ struct aml_trace_nl_info {
     int user_pid;
     int enable;
 };
-enum {
-    AML_TRACE_FW_LOG_START = 0xFF01,
-    AML_TRACE_FW_LOG_STOP,
-    AML_TRACE_FW_LOG_UPLOAD,
-};
+
 struct log_nl_msg_info {
     int msg_type;
     int msg_len;
@@ -276,6 +272,9 @@ static void aml_recv_netlink(struct sk_buff *skb)
 {
     struct nlmsghdr *nlh;
     struct log_nl_msg_info * nl_log_info = NULL;
+    struct wifi_mac *wifimac = NULL;
+
+    wifimac = wifi_mac_get_mac_handle();
 
     nlh = nlmsg_hdr(skb); // get msg body
     AML_PRINT_LOG_INFO("kernel rcv msg type: %d, pid: %d, len: %d, flag: %d, seq: %d\n",
@@ -285,6 +284,12 @@ static void aml_recv_netlink(struct sk_buff *skb)
         case AML_TRACE_FW_LOG_START:
             g_trace_nl_info.user_pid = nlh->nlmsg_pid;
             g_trace_nl_info.enable = 1;
+            AML_PRINT_LOG_INFO("send file save to trace log\n");
+
+            wifimac->drv_priv->hal_priv->hal_ops.hal_set_fwlog_cmd(WRITE_SRAM_MODE);
+            wifimac->drv_priv->hal_priv->hal_ops.hal_set_fwlog_cmd(OPEN_AUTO_PRINT);
+            wifimac->drv_priv->hal_priv->g_get_fw_log = 1;
+
             AML_PRINT_LOG_INFO("user space process (pid: %d) start recv fw log !!!!\n", g_trace_nl_info.user_pid);
             break;
         case AML_TRACE_FW_LOG_STOP:
@@ -692,6 +697,59 @@ drv_set_arp_agent(struct drv_private *drv_priv, unsigned char wnet_vif_id,
     AML_PRINT(AML_LOG_ID_HAL, AML_LOG_LEVEL_DEBUG, "vid=%d, enable=%d, ipv4=0x%x\n",
         wnet_vif_id, enable, ipv4);
     return drv_priv->hal_priv->hal_ops.phy_set_arp_agent(wnet_vif_id, enable, ipv4, ipv6, dhcp_server_mac);
+}
+
+void drv_set_mdns_offload_state(struct drv_private *drv_priv, int enable)
+{
+    drv_priv->hal_priv->hal_ops.phy_set_mdns_offload_state(enable);
+}
+
+void drv_set_passthrough_behavior(struct drv_private *drv_priv, int behavior)
+{
+    drv_priv->hal_priv->hal_ops.phy_set_passthrough_behavior(behavior);
+}
+
+void drv_set_mdns_reset_all(struct drv_private *drv_priv)
+{
+    drv_priv->hal_priv->hal_ops.phy_set_mdns_reset_all();
+}
+
+void drv_set_mdns_add_protocol_data_status(struct drv_private *drv_priv)
+{
+    drv_priv->hal_priv->hal_ops.phy_set_mdns_add_protocol_data_inform();
+}
+
+
+int drv_set_mdns_add_protocol_data(struct drv_private *drv_priv,void *list_param, mdnsProtocolData *offloadData)
+{
+    return drv_priv->hal_priv->hal_ops.phy_set_mdns_add_protocol_data(list_param, offloadData->matchCriteriaListNum, offloadData->rawOffloadPacket, offloadData->rawOffloadPacketLen);
+}
+
+
+void drv_set_mdns_remove_protocol_data(struct drv_private *drv_priv, int index)
+{
+    drv_priv->hal_priv->hal_ops.phy_set_mdns_remove_protocol_data(index);
+}
+
+void drv_set_mdns_get_reset_hit_counter(struct drv_private *drv_priv, int index)
+{
+
+    drv_priv->hal_priv->hal_ops.phy_set_mdns_get_reset_hit_counter(index);
+}
+
+void drv_set_mdns_get_reset_miss_counter(struct drv_private *drv_priv)
+{
+    drv_priv->hal_priv->hal_ops.phy_set_mdns_get_reset_miss_counter();
+}
+
+void drv_set_mdns_add_passthrough_list(struct drv_private *drv_priv, uint8_t *qname, int length)
+{
+    drv_priv->hal_priv->hal_ops.phy_set_mdns_add_passthrough_list(qname, length);
+}
+
+void drv_set_mdns_remove_passthrough_list(struct drv_private *drv_priv, uint8_t *qname, int length)
+{
+    drv_priv->hal_priv->hal_ops.phy_set_mdns_remove_passthrough_list(qname, length);
 }
 
 static int
@@ -1668,6 +1726,7 @@ int aml_drv_attach( struct drv_private *drv_priv, struct wifi_mac* wmac)
     drv_priv->drv_config.cfg_band = DEFAULT_BAND_ALL;
     drv_priv->drv_config.cfg_recovery = DEFAULT_SUPPORT_RECOVERY;
     drv_priv->drv_config.cfg_adaptive_mode = DISABLE;
+    drv_priv->drv_config.cfg_adaptive_en = DISABLE;
 
     if (aml_bus_type) {
         drv_priv->drv_config.cfg_checksumoffload    = USB_DEFAULT_HW_CSUM;
@@ -2413,6 +2472,10 @@ static void drv_trigger_send_delba(SYS_TYPE param1,
         WIFINET_NODE_UNLOCK(vm_sta_tbl);
     }
 }
+extern struct mm_mdns_data_addr mm_mdns_data_addr_drv_write;
+extern int mdns_passthrough_state;
+extern int mdns_misscnt;
+extern int mdns_hitcnt;
 
 static void drv_intr_fw_event(void *dpriv, void *event)
 {
@@ -2420,6 +2483,8 @@ static void drv_intr_fw_event(void *dpriv, void *event)
     struct wlan_net_vif *wnet_vif = NULL;
     struct fw_event_no_data *fw_event = (struct fw_event_no_data *)event;
     struct wifi_mac *wifimac = NULL;
+    int mdns_frame_addr = 0;
+    int mdns_passthrough_addr = 0;
 
     wnet_vif = drv_priv->drv_wnet_vif_table[fw_event->basic_info.vid];
     if (wnet_vif == NULL) {
@@ -2515,16 +2580,86 @@ static void drv_intr_fw_event(void *dpriv, void *event)
         case WOW_WAKE_EVENT:
         {
             struct wow_wake_event *wow_event = (struct wow_wake_event *)fw_event;
-            wifimac->wow_wakeup_reason = wow_event->reason;
+            if (wow_event->need_upload)
+                wifimac->wow_wakeup_reason = wow_event->reason;
+            mdns_hitcnt = wow_event->mdns_hitcnt;
+            mdns_misscnt = wow_event->mdns_misscnt;
+            break ;
+        }
+        case MDNS_UP_MDNS_ADDR_EVENT:
+        {
+            struct mm_mdns_data_addr * mm_mdns_data_addr_event= (struct mm_mdns_data_addr *)fw_event;
+            for (; mdns_frame_addr < 3; mdns_frame_addr++) {
+                mm_mdns_data_addr_drv_write.mdns_data_addr[mdns_frame_addr] = mm_mdns_data_addr_event->mdns_data_addr[mdns_frame_addr];
+            }
+            for (; mdns_passthrough_addr < 4; mdns_passthrough_addr++) {
+                mm_mdns_data_addr_drv_write.passthrough_addr[mdns_passthrough_addr] = mm_mdns_data_addr_event->passthrough_addr[mdns_passthrough_addr];
+            }
             break ;
         }
 
         case COEX_EVENT:
         {
-            coex_event *coex_event_info = (coex_event *)fw_event;
-            printk("co:%d,%d,%d,s:%d\n", coex_event_info->data_info.fdd_time/1000,
-                coex_event_info->data_info.tdd_actime/1000, coex_event_info->data_info.tdd_inactime/1000,
-                (coex_event_info->data_info.fdd_time + coex_event_info->data_info.tdd_actime +coex_event_info->data_info.tdd_inactime)/1000);
+            struct coex_event *coex_event = (struct coex_event *)fw_event;
+            struct coex_event_info ind = coex_event->data_info;
+            int wifi_act_sum = 0;
+            int wifi_inactive_sum = 0;
+            int time_sum = 0;
+            int ratio = 0;
+
+            printk("\nCoex Status Info: \n");
+
+            if (ind.coex_state == 1)
+            {
+                if (ind.wifi_act_sum > 0)
+                {
+                    wifi_act_sum = (ind.wifi_act_sum) / 1000;
+                    wifi_inactive_sum = (ind.wifi_inactive_sum) / 1000;
+                    time_sum = wifi_act_sum + wifi_inactive_sum;
+                }
+                if (wifi_act_sum > 0)
+                {
+                    ratio = (wifi_act_sum * 100) / time_sum;
+                }
+                printk("coex work on TDD, work mode: %x; \n", ind.work_mode);
+                printk("In %dms; wifi_time: %dms; bt_time: %dms; wifi ratio: %d%%\n", time_sum, wifi_act_sum, wifi_inactive_sum, ratio);
+            }
+            else
+            {
+                printk("coex work on FDD, work mode: %x; \n", ind.work_mode);
+            }
+
+            if (ind.coex_protect_frame_ps1_cnt_sum > 0)
+            {
+                ratio = (ind.coex_protect_frame_ps1_tx_ok_cnt_sum * 100) / ind.coex_protect_frame_ps1_cnt_sum;
+                printk("null data status: send cnt: %d, success cnt: %d, success ratio: %d%%\n", ind.coex_protect_frame_ps1_cnt_sum, ind.coex_protect_frame_ps1_tx_ok_cnt_sum, ratio);
+            }
+            else
+            {
+                printk("Do not send null data now; \n");
+            }
+
+            printk("\nBT Link Info: \n");
+            if (!(ind.bt_work_status & BIT(31)))
+            {
+                printk("BT is not working; \n");
+            }
+            if (ind.bt_work_status & BIT(22))
+            {
+                printk("BT work on SLAVE mode; \n");
+            }
+            if (ind.bt_work_status & BIT(23))
+            {
+                printk("BT work with BLE; \n");
+            }
+            if (ind.bt_work_status & BIT(24))
+            {
+                printk("BT work with CLASSIC; \n");
+            }
+            if (ind.bt_work_status & BIT(26))
+            {
+                printk("BT REQ TDD; \n");
+            }
             break ;
         }
 
@@ -2851,7 +2986,7 @@ unsigned char drv_calc_agg_num(struct drv_private *drv_priv, unsigned char ampdu
         unsigned int efuse_val = 0;
 
         /* bit[24:22] indicate family revision, 5 means w1u usb revc*/
-        efuse_val = drv_read_efuse_val(drv_priv, VID_PID_EFUSE_ADDR);
+        efuse_val = drv_read_efuse(drv_priv, VID_PID_EFUSE_ADDR);
         amsdu_page_num = AMSDU_MAX_BUFFER_SIZE / PAGE_LEN_USB;
 
         if (((efuse_val >> FAMILY_REV_START) & FAMILY_REV_MASK) < W1U_USB_REV_C) {
@@ -2873,7 +3008,7 @@ unsigned short drv_get_tx_page_total_num(struct drv_private *drv_priv)
     return drv_priv->hal_priv->hal_ops.hal_get_tx_page_total_num();
 }
 
-unsigned int drv_read_efuse_val(struct drv_private *drv_priv, unsigned int efuse_addr)
+unsigned int drv_read_efuse(struct drv_private *drv_priv, unsigned int efuse_addr)
 {
-    return drv_priv->hal_priv->hal_ops.hal_read_efuse_val(efuse_addr);
+    return drv_priv->hal_priv->hal_ops.hal_read_efuse(efuse_addr);
 }

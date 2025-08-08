@@ -834,6 +834,9 @@ int hal_download_sdio_fw_img(void)
 }
 
 #ifdef OFFLOAD_RAM_ENABLE
+#ifdef OFFLOAD_BUFFER_CHECK
+unsigned char offload_code_buffer_check[OFFLOAD_PKT_RAM_LEN];
+#endif
 int hal_download_sdio_offload_fw_img(void)
 {
     int err = 0, len = 0, offset = 0;
@@ -843,7 +846,7 @@ int hal_download_sdio_offload_fw_img(void)
 
     offset = 0;
     do {
-        databyte = (len > MAX_OFFSET) ? MAX_OFFSET : len;
+        databyte = (len > SRAM_MAX_LEN) ? SRAM_MAX_LEN : len;
         hif->hif_ops.hi_write_mem(offload_code_buffer + offset, (unsigned char *)(SYS_TYPE)(MAC_EXTEND_CODE_BASE + offset), databyte);
         offset += databyte;
         len -= databyte;
@@ -856,7 +859,7 @@ int hal_download_sdio_offload_fw_img(void)
     memset(offload_code_buffer_check, 0, len);
 
     do {
-        databyte = (len > MAX_OFFSET) ? SRAM_MAX_LEN : len;
+        databyte = (len > SRAM_MAX_LEN) ? SRAM_MAX_LEN : len;
         hif->hif_ops.hi_read_mem(offload_code_buffer_check + offset, (unsigned char*)(SYS_TYPE)(MAC_EXTEND_CODE_BASE + offset), databyte);
         offset += databyte;
         len -= databyte;

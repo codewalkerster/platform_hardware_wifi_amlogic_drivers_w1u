@@ -2,12 +2,14 @@
 #define DRI_TEST_CMD
 
 #include "fi_sdio.h"
+//#include "mdns_offload.h"
 
 #ifdef CONFIG_SDIO_IF
 
 //================cmd=========================================
 
 #define CMD_GET (0x80)
+#define CMD_MASK (0x7f)
 #define BCNInterval_Cmd 0x1
 #define Bcn_Frm_Addr_Cmd  (CMD_GET|0x2)
 #define Power_Save_Cmd 0x4
@@ -72,7 +74,18 @@
 #define TXT_SHIFT_CFG_CMD 0x53
 #define SCAN_SCH_START_CMD 0x54
 #define COEX_STATUS_CMD 0x55
-
+//mdns offload
+#define SET_MDNS_OFFLOAD_STATE_CMD 0x56
+#define SET_MDNS_OFFLOAD_BEHAVIOR_CMD 0x57
+#define SET_MDNS_OFFLOAD_RESET_ALL_CMD 0x58
+#define ADD_MDNS_OFFLOAD_DATA_INFORM_CMD 0x59
+#define REMOVE_MDNS_OFFLOAD_DATA_CMD 0x5A
+#define GET_MDNS_OFFLOAD_RESET_HIT_CONTER_CMD 0x5B
+#define GET_MDNS_OFFLOAD_RESET_MISS_CONTER_CMD 0x5C
+#define ADD_MDNS_OFFLOAD_PASSTHROUGH_LIST_CMD 0x5D
+#define REMOVE_MDNS_OFFLOAD_PASSTHROUGH_LIST_CMD 0x5E
+//#define ADD_MDNS_OFFLOAD_DATA_CMD 0x5A
+#define EFUSE_OPERATE_CMD 0x5F
 /*coexist cmd1 comand*/
 #define COEXIST_EN_CMD  BIT(0)
 #define COEXIST_MAX_MISS_BCN_CNT  BIT(1)
@@ -85,11 +98,21 @@
 #define COEXIST_INFOR_BT_WIFI_WORK_FREQ  BIT(8)
 #define COEXIST_PARAM_CMD_CONFIG  BIT(9)
 
+typedef unsigned char uint8_t;
+typedef unsigned short uint16_t;
+typedef unsigned int uint32_t;
+
 enum {
     COEXIST_SUB_CMD_WORK_MODE = 0x1,
     COEXIST_SUB_CMD_RSSI = 0x2,
     COEXIST_SUB_CMD_INFO = 0x3,
     COEXIST_SUB_CMD_GET_TIME = 0x4
+};
+
+enum
+{
+    efuse_operate_read = 1,
+    efuse_operate_write = 2,
 };
 
 //Reset_Key_Cmd
@@ -667,9 +690,13 @@ typedef struct zgb_exist_event
 
 struct coex_event_info
 {
-    unsigned int  fdd_time;
-    unsigned int  tdd_actime;
-    unsigned int  tdd_inactime;
+    unsigned char coex_state; //TDD or FDD;
+    unsigned char work_mode;  // TDD reason;
+    unsigned short coex_protect_frame_ps1_cnt_sum;
+    unsigned short coex_protect_frame_ps1_tx_ok_cnt_sum;
+    unsigned int bt_work_status; // bt connect info;
+    unsigned int wifi_inactive_sum;
+    unsigned int wifi_act_sum;
 };
 
 typedef struct coex_event
@@ -700,7 +727,10 @@ enum {
 struct wow_wake_event
 {
     struct fw_event_basic_info basic_info;
+    unsigned int need_upload;
     unsigned int reason;
+    unsigned int mdns_hitcnt;
+    unsigned int mdns_misscnt;
 };
 
 #define TSSI_5G_CAL_NUM 4
@@ -920,5 +950,143 @@ typedef struct Get_Spec_Info
 } Get_Spec_Info;
 
 
+typedef struct matchCriteria{
+    /* QTYPE RRTYPE */
+    int type;
+    /* RRNAME offset in the rawOffloadPacket */
+    int nameOffset;
+} matchCriteria;
+
+typedef struct {
+    unsigned char *rawOffloadPacket;
+    uint32_t rawOffloadPacketLen;
+    matchCriteria *matchCriteriaList;
+    uint32_t matchCriteriaListNum;
+} mdnsProtocolData;
+
+typedef enum {
+    /* All the queries are forwarded to the system without any modification */
+    FORWARD_ALL,
+    /* All the queries are dropped.*/
+    DROP_ALL,
+    /* Only the queries present in the passthrough list are forwarded
+     * to the system without any modification.
+    */
+    PASSTHROUGH_LIST,
+} passthroughBehavior;
+
+
+// Structure containing the parameters of the @ref MDNS_SET_STATE message.
+typedef struct mdns_offload_state {
+    unsigned char Cmd;
+    unsigned char reserve[3];
+    uint16_t enable;
+    uint16_t resv;
+} mdns_offload_state;
+
+/// Structure containing the parameters of the @ref MDNS_SET_BEHAVIOR message.
+typedef struct mdns_offload_behavior {
+    unsigned char Cmd;
+    uint8_t behavior;
+    uint8_t resv[2];
+} mdns_offload_behavior;
+
+/// Structure containing the parameters of the @ref MDNS_SET_BEHAVIOR message.
+typedef struct mdns_offload_reset_all {
+    unsigned char Cmd;
+    uint8_t resv[3];
+} mdns_offload_reset_all;
+
+
+/// Structure containing the parameters of the @ref PRIV_MDNS_ADDPASSTHROUGH_CFM message.
+typedef struct mdns_adddpassthrough_event
+{
+    struct fw_event_basic_info basic_info;
+    uint32_t state;
+} mdns_adddpassthrough_event;
+
+/// Structure containing the parameters of the @ref MDNS_ADD_PROTOCOL_STATUS message.
+typedef struct mm_mdns_add_data_inform {
+    unsigned char Cmd;
+    //uint8_t list_len;
+    //uint16_t data_len;
+    uint8_t resv[3];
+    uint32_t index;
+} mm_mdns_add_data_inform;
+
+/// Structure containing the parameters of the @ref MDNS_ADD_PROTOCOL_STATUS message.
+typedef struct mm_mdns_add_data {
+    uint16_t list_len;
+    uint16_t data_len;
+    matchCriteria list_criteria[MDNS_LIST_CRITERIA_MAX];
+    uint8_t raw_offload_packet[MDNS_RAW_DATA_LENGTH_MAX];
+
+} mm_mdns_add_data;
+
+
+/// Structure containing the parameters of the @ref MDNS_REMOVE_PROTOCOL message.
+typedef struct mm_mdns_remove_data {
+    unsigned char Cmd;
+    unsigned char reserve[3];
+    uint32_t index;
+} mm_mdns_remove_data;
+
+
+/// Structure containing the parameters of the @ref MDNS_GET_HIT message.
+typedef struct mm_mdns_get_hit {
+    unsigned char Cmd;
+    unsigned char reserve[3];
+    uint32_t index;
+} mm_mdns_get_hit;
+
+/// Structure containing the parameters of the @ref MDNS_GET_MISS message.
+typedef struct mm_mdns_get_miss {
+    unsigned char Cmd;
+    unsigned char reserve[3];
+    uint32_t index;
+} mm_mdns_get_miss;
+
+/// Structure containing the parameters of the @ref MDNS_ADD_PASS_LIST message.
+typedef struct mm_mdns_passthrough_list {
+    unsigned char Cmd;
+    unsigned char reserve[3];
+    uint32_t index;
+//    uint8_t qname[MDNS_QNAME_LENGTH_MAX];
+//    uint16_t length;
+} mm_mdns_passthrough_list;
+
+typedef struct mm_mdns_data_addr {
+    struct fw_event_basic_info basic_info;
+    uint32_t passthrough_addr[MDNS_PASSTHROUGH_MAX];
+    uint32_t mdns_data_addr[MDNS_DATA_MAX];
+} mm_mdns_data_addr;
+
+typedef struct mm_mdns_data_state {
+    int mdns_index;
+    int mdns_add_data_state;
+} mm_mdns_data_state;
+
+
+/// Structure containing the parameters of the @ref PRIV_MDNS_GET_HIT_CFM message.
+typedef struct mdns_get_hit_event {
+    struct fw_event_basic_info basic_info;
+    uint32_t cnt;
+} mdns_get_hit_event;
+
+/// Structure containing the parameters of the @ref PRIV_MDNS_GET_MISS_CFM message.
+typedef struct mdns_get_miss_event {
+    struct fw_event_basic_info basic_info;
+    uint32_t cnt;
+} mdns_get_miss_event;
+
+typedef struct efuse_operate_cmd
+{
+    unsigned char cmd;
+    unsigned char sub_cmd;
+    unsigned char reserve;
+    unsigned char vid;
+    unsigned int efuse_addr;
+    unsigned int efuse_val;
+} efuse_operate_cmd_t;
 #endif// #ifdef CONFIG_SDIO_IF
 #endif

@@ -986,7 +986,7 @@ void hal_tx_desc_build(struct hi_agg_tx_desc* HiTxDesc,
     pTxDPape->TxPriv.TxRate[0]= HiTxDesc->CurrentRate;
     pTxDPape->TxPriv.TxRate[1]= HiTxDesc->TxTryRate1;
     pTxDPape->TxPriv.TxRate[2]= HiTxDesc->TxTryRate2;
-    pTxDPape->TxPriv.TxRate[3]= HiTxDesc->TxTryRate3;
+    pTxDPape->TxPriv.TxRate[3]= HiTxDesc->TxTryRate2;
     pTxDPape->TxPriv.TxRetry[0]= HiTxDesc->TxTryNum0;
     pTxDPape->TxPriv.TxRetry[1]= HiTxDesc->TxTryNum1+pTxDPape->TxPriv.TxRetry[0];
     pTxDPape->TxPriv.TxRetry[2]= HiTxDesc->TxTryNum2+pTxDPape->TxPriv.TxRetry[1];

@@ -1,5 +1,6 @@
 #ifndef AML_SDIO_H
 #define AML_SDIO_H
+
 #include "osdep.h"
 
 /* Stand sdio function number from 0~7

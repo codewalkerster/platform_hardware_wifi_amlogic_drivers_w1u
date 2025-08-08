@@ -683,6 +683,8 @@ unsigned char hal_clear_fw_wake(void)
     return 0;
 }
 
+extern void (*bt_request_recovery)(void);
+
 void hal_ops_attach(void)
 {
     struct hal_private *hal_priv = hal_get_priv();
@@ -799,13 +801,27 @@ void hal_ops_attach(void)
     hal_priv->hal_ops.hal_cfg_cali_param = hal_cfg_cali_param;
     hal_priv->hal_ops.hal_cfg_txpwr_cffc_param = hal_cfg_txpwr_cffc_param;
     hal_priv->hal_ops.hal_get_tx_page_total_num = hal_get_tx_page_total_num;
-    hal_priv->hal_ops.hal_read_efuse_val = hal_read_efuse_val;
+    hal_priv->hal_ops.hal_read_efuse = hal_read_efuse;
+    hal_priv->hal_ops.hal_write_efuse = hal_write_efuse;
+    //mdns phy ops
+    hal_priv->hal_ops.phy_set_mdns_offload_state = phy_set_mdns_offload_state;
+    hal_priv->hal_ops.phy_set_passthrough_behavior = phy_set_passthrough_behavior;
+    hal_priv->hal_ops.phy_set_mdns_reset_all = phy_set_mdns_reset_all;
+    hal_priv->hal_ops.phy_set_mdns_add_protocol_data_inform = phy_set_mdns_add_protocol_data_inform;
+    hal_priv->hal_ops.phy_set_mdns_add_protocol_data = phy_set_mdns_add_protocol_data;
+    hal_priv->hal_ops.phy_set_mdns_remove_protocol_data = phy_set_mdns_remove_protocol_data;
+    hal_priv->hal_ops.phy_set_mdns_get_reset_hit_counter = phy_set_mdns_get_reset_hit_counter;
+    hal_priv->hal_ops.phy_set_mdns_get_reset_miss_counter = phy_set_mdns_get_reset_miss_counter;
+    hal_priv->hal_ops.phy_set_mdns_add_passthrough_list = phy_set_mdns_add_passthrough_list;
+    hal_priv->hal_ops.phy_set_mdns_remove_passthrough_list = phy_set_mdns_remove_passthrough_list;
+
 #if defined(SDIO_BUILD_IN) && defined(SDIO_MODE_ON)
     host_wake_req = hal_wake_fw_req;
     host_suspend_req = aml_sdio_pm_suspend;
     host_resume_req = aml_sdio_pm_resume;
     pre_suspend_wifi = aml_sdio_pm_pre_suspend;
 #endif
+    bt_request_recovery = aml_bt_request_recovery;
     DBG_EXIT();
 }
 
@@ -871,6 +887,7 @@ void hal_ops_detach(void)
     host_suspend_req = NULL;
     host_resume_req = NULL;
 #endif
+    bt_request_recovery = NULL;
 
 }
 
@@ -2275,9 +2292,9 @@ static int hal_get_chip_id(void)
     unsigned char chip_id_buf[23];
 
     chip_id_l = hif->hif_ops.hi_read_efuse(CHIP_ID_EFUASE_L);
-    AML_PRINT_LOG_INFO("efuse addr:%08x, chip id is:%08x\n", CHIP_ID_EFUASE_L, chip_id_l);
+    AML_PRINT_LOG_INFO("efuse_addr:%08x, chip_id:0x%08x\n", CHIP_ID_EFUASE_L, chip_id_l);
     chip_id_h = hif->hif_ops.hi_read_efuse(CHIP_ID_EFUASE_H);
-    AML_PRINT_LOG_INFO("efuse addr:%08x, chip id is:%08x\n", CHIP_ID_EFUASE_H, chip_id_h);
+    AML_PRINT_LOG_INFO("efuse_addr:%08x, chip_id:0x%08x\n", CHIP_ID_EFUASE_H, chip_id_h);
 
     sprintf(chip_id_buf, CHIP_ID_F, chip_id_h & 0xffff, chip_id_l);
     if (aml_store_to_file(WIFIMAC_PATH, chip_id_buf, strlen(chip_id_buf)) > 0) {
@@ -3863,7 +3880,7 @@ void hal_get_fwlog(void)
     drv_priv->drv_ops.drv_print_fwlog(fwlog_buf, databyte);
 }
 
-unsigned int hal_read_efuse_val(unsigned int efuse_addr)
+unsigned int hal_read_efuse(unsigned int efuse_addr)
 {
     struct hw_interface* hif = hif_get_hw_interface();
     unsigned int efuse_val = 0;
@@ -3873,11 +3890,59 @@ unsigned int hal_read_efuse_val(unsigned int efuse_addr)
     return efuse_val;
 }
 
+void hal_write_efuse(unsigned int efuse_addr, unsigned int efuse_val)
+{
+    struct hw_interface* hif = hif_get_hw_interface();
+
+    hif->hif_ops.hi_write_efuse(efuse_addr, efuse_val);
+}
+
 unsigned short hal_get_tx_page_total_num(void)
 {
     struct hw_interface* hif = hif_get_hw_interface();
 
     return hif->hw_config.txpagenum;
+}
+
+void hal_write_mem(unsigned char *buf, unsigned int dest_addr, unsigned int len)
+{
+    struct hw_interface* hif = hif_get_hw_interface();
+    unsigned int data_byte = 0;
+    unsigned int offset = 0;
+    unsigned int remain_len = 0;
+
+    AML_PRINT_LOG_INFO("dest_addr:0x%x, len:%d, integer:%d, remain:%d\n",
+        dest_addr, len, (len / PAGE_LEN) * PAGE_LEN, len % PAGE_LEN);
+
+    remain_len = (len / PAGE_LEN) * PAGE_LEN;
+    do {
+        data_byte = (remain_len > MAX_OFFSET) ? MAX_OFFSET : remain_len;
+        hif->hif_ops.hi_write_mem(buf + offset, (unsigned char *)(dest_addr + offset), data_byte);
+        offset += data_byte;
+        remain_len -= data_byte;
+    } while (remain_len > 0);
+
+    remain_len = len % PAGE_LEN;
+    do {
+        hif->hif_ops.bt_hi_write_word(dest_addr + offset, *(unsigned int *)(buf + offset));
+        offset += 4;
+        remain_len -= 4;
+    } while (remain_len > 0);
+}
+
+void hal_read_mem(unsigned char *buf, unsigned int src_addr, unsigned int len)
+{
+    struct hw_interface* hif = hif_get_hw_interface();
+    unsigned int offset = 0;
+    unsigned int data_byte = 0;
+    unsigned int remain_len = len;
+
+    do {
+        data_byte = (remain_len > MAX_OFFSET) ? MAX_OFFSET : remain_len;
+        hif->hif_ops.hi_read_mem(buf + offset, (unsigned char *)src_addr, data_byte);
+        offset += data_byte;
+        remain_len -= data_byte;
+    } while (remain_len > 0);
 }
 
 #ifdef HAL_SIM_VER

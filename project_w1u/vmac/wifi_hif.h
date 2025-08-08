@@ -135,12 +135,11 @@ struct amlw_hif_ops {
     void (*hif_get_sts)(unsigned int op_code, unsigned int ctrl_code);
     void (*hif_pt_rx_start)(unsigned int qos);
     struct rx_statics_st (*hif_pt_rx_stop)(void);
-
     int (*hif_suspend)(unsigned int suspend_enable);
-
-    unsigned int (*hi_read_efuse)(unsigned int addr);
     void (*hi_read_mem)(unsigned char *buf, unsigned char *addr, SYS_TYPE len);
     void (*hi_write_mem)(unsigned char *buf, unsigned char *addr, SYS_TYPE len);
+    unsigned int (*hi_read_efuse)(unsigned int addr);
+    unsigned int (*hi_write_efuse)(unsigned int addr, unsigned int val);
 };
 
 void hi_clear_irq_status(unsigned int data);
@@ -207,6 +206,6 @@ unsigned int  MAC_RD_REG(unsigned int addr);
 void MAC_WR_REG(unsigned int addr,unsigned int data);
 
 void b2b_rx_throughput_calc(HW_RxDescripter_bit *RxPrivHdr);
-
-
+unsigned int hif_read_efuse(unsigned int addr);
+void hif_write_efuse(unsigned int addr, unsigned int val);
 #endif //_HI_SDIO_H_

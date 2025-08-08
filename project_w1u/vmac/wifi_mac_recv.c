@@ -1074,7 +1074,9 @@ void wifi_mac_recv_pkt_parse(struct wifi_station *sta, struct sk_buff *skb) {
             if (((uh->source == 0x4400) && (uh->dest == 0x4300))
                 || ((uh->source == 0x4300) && (uh->dest == 0x4400))) {
                 //AML_PRINT_LOG_INFO("source:%04x, dest:%04x\n", uh->source, uh->dest);
-                if (sta->connect_status == CONNECT_DHCP_GET_ACK  && sta->sta_wnet_vif->vm_use_static_ip == 0) {
+                if (sta->connect_status == CONNECT_DHCP_GET_ACK
+                    && sta->sta_wnet_vif->vm_11v_processing != WIFINET_BTM_STATUS_DONE
+                    && sta->sta_wnet_vif->vm_use_static_ip == 0) {
                     return;
                 }
                 dhcp_p = (unsigned char *)((unsigned char *)uh + 8);
@@ -1879,6 +1881,13 @@ unsigned char is_need_to_print(unsigned char* frm) {
                 ret = 1;
             }
             break;
+        case AML_CATEGORY_WNM:
+            if (ia->ia_action == WIFINET_ACTION_BTM_REQ
+                || ia->ia_action == WIFINET_ACTION_BTM_RSP) {
+                ret = 1;
+            }
+            break;
+
         case AML_CATEGORY_P2P:
             p2p_act = (struct wifi_mac_p2p_action_frame *)frm;
             if (p2p_act->subtype == P2P_PRESENCE_RESP
@@ -5225,7 +5234,11 @@ void wifi_mac_recv_action(struct wlan_net_vif *wnet_vif, struct wifi_station *st
             case  AML_CATEGORY_WNM:
                 if (wnet_vif->wnet_vif_id == NET80211_MAIN_VMAC) {
                     vm_cfg80211_notify_mgmt_rx(wnet_vif,channel, os_skb_data(skb),os_skb_get_pktlen(skb));
-                    AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "WNM cfg80211_rx_mgmt\n");
+                    AML_PRINT(AML_LOG_ID_CFG80211, AML_LOG_LEVEL_INFO, "WNM cfg80211_rx_mgmt %d\n",wnet_vif->vm_opmode);
+                    if (wnet_vif->vm_opmode == WIFINET_M_STA && ia->ia_action == WIFINET_ACTION_BTM_REQ)
+                    {
+                        wnet_vif->vm_11v_processing = WIFINET_BTM_STATUS_REQ;
+                    }
                 }
                 break;
             case AML_CATEGORY_VHT:

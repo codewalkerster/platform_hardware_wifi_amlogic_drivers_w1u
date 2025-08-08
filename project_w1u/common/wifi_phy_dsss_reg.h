@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
-* Copyright (C) 202X Original Author (retain original author information)
-* Copyright (C) 202X Amlogic, Inc. All rights reserved.
+* Copyright (C) 2025 Original Author (retain original author information)
+* Copyright (C) 2025 Amlogic, Inc. All rights reserved.
 *
 * Description:
 */

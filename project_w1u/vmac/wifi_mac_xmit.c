@@ -266,7 +266,9 @@ void wifi_mac_xmit_pkt_parse(struct sk_buff *skb, struct wifi_mac *wifimac)
             sta->sta_wnet_vif->txtp_stat.udp_tx_payload_total += __cpu_to_be16(uh->len) - sizeof(struct udphdr);
             if (((uh->source == 0x4400) && (uh->dest == 0x4300))
                 || ((uh->source == 0x4300) && (uh->dest == 0x4400))) {
-                if (sta->connect_status == CONNECT_DHCP_GET_ACK && sta->sta_wnet_vif->vm_use_static_ip == 0) {
+                if (sta->connect_status == CONNECT_DHCP_GET_ACK
+                    && sta->sta_wnet_vif->vm_11v_processing != WIFINET_BTM_STATUS_DONE
+                    && sta->sta_wnet_vif->vm_use_static_ip == 0) {
                     return;
                 }
                 dhcp_p = (unsigned char *)((unsigned char *)uh + 8);

@@ -283,6 +283,8 @@ enum aml_iwpriv_subcmd
     AML_IWP_GET_WIFI_PERFORMANCE_INFO = 115,
     AML_IWP_SET_TX_MPDU_NUM = 116,
     AML_IWP_GET_NOISE_FLOOR = 117,
+    AML_IWP_CLOSE_SOCKET = 118,
+    AML_IWP_GET_COEX_STATUS = 119,
 };
 
 extern void dump_spec_regs_val(struct wlan_net_vif *wnet_vif, int reg_domain);

@@ -1,1 +1,1 @@
-#define DRIVERVERSION    "wifi: v1.3.4_20250714-w1u-r driver:35e09dd97e"
+#define DRIVERVERSION    "v1.3.5_20250808-w1u driver:0ccf0c11"

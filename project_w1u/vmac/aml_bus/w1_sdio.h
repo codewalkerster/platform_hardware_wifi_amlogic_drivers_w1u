@@ -216,7 +216,6 @@ struct amlw1_hif_ops {
     struct rx_statics_st (*hif_pt_rx_stop)(void);
 
     int (*hif_suspend)(unsigned int suspend_enable);
-    unsigned int (*hi_read_efuse)(unsigned int addr);
     void (*hi_read_mem)(unsigned char *buf, unsigned char *addr, SYS_TYPE len);
     void (*hi_write_mem)(unsigned char *buf, unsigned char *addr, SYS_TYPE len);
 };
